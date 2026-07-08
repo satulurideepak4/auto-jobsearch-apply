@@ -838,6 +838,571 @@ def scrape_producthunt() -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
+# SCRAPER 10: Greenhouse ATS (public API, no auth)
+# ---------------------------------------------------------------------------
+
+_GREENHOUSE_BOARDS: dict[str, str] = {
+    # AI / ML
+    "anthropic": "Anthropic",
+    "cohere": "Cohere",
+    "scaleai": "Scale AI",
+    "huggingface": "Hugging Face",
+    "together": "Together AI",
+    "mistralai": "Mistral AI",
+    "perplexity": "Perplexity AI",
+    # Fintech
+    "brex": "Brex",
+    "plaid": "Plaid",
+    "stripe": "Stripe",
+    "gusto": "Gusto",
+    "carta": "Carta",
+    "rippling": "Rippling",
+    "ramp": "Ramp",
+    "deel": "Deel",
+    "remote": "Remote",
+    "payoneer": "Payoneer",
+    # Cloud / Infra / DevTools
+    "hashicorp": "HashiCorp",
+    "mongodb": "MongoDB",
+    "snowflake": "Snowflake",
+    "databricks": "Databricks",
+    "datadog": "Datadog",
+    "confluent": "Confluent",
+    "cockroachlabs": "CockroachDB",
+    "grafana": "Grafana Labs",
+    "pulumi": "Pulumi",
+    "dbtlabs": "dbt Labs",
+    "airbyte": "Airbyte",
+    "fivetran": "Fivetran",
+    "temporal": "Temporal",
+    "timescale": "Timescale",
+    "redpanda": "Redpanda",
+    "immuta": "Immuta",
+    # SaaS / Productivity
+    "notion": "Notion",
+    "airtable": "Airtable",
+    "retool": "Retool",
+    "lattice": "Lattice",
+    "figma": "Figma",
+    "loom": "Loom",
+    "clickup": "ClickUp",
+    "coda": "Coda",
+    "amplitude": "Amplitude",
+    "intercom": "Intercom",
+    # Security
+    "1password": "1Password",
+    "crowdstrike": "CrowdStrike",
+    "snyk": "Snyk",
+    "lacework": "Lacework",
+    "orca": "Orca Security",
+    # E-commerce / Platform
+    "faire": "Faire",
+    "doordash": "DoorDash",
+    "instacart": "Instacart",
+    "roblox": "Roblox",
+    "canva": "Canva",
+    # Enterprise
+    "pagerduty": "PagerDuty",
+    "digitalocean": "DigitalOcean",
+    "cloudflare": "Cloudflare",
+    "twilio": "Twilio",
+    "zendesk": "Zendesk",
+}
+
+
+def _fetch_greenhouse_board(slug: str, company_name: str, skill_keywords: list[str]) -> list[dict]:
+    """Fetch one Greenhouse board; return first 3 matching engineering jobs."""
+    try:
+        resp = requests.get(
+            f"https://api.greenhouse.io/v1/boards/{slug}/jobs?content=true",
+            timeout=15,
+        )
+        if resp.status_code in (404, 410):
+            return []
+        resp.raise_for_status()
+        jobs_raw = resp.json().get("jobs", [])
+        results: list[dict] = []
+        for job in jobs_raw:
+            if len(results) >= 3:
+                break
+            title = str(job.get("title", "") or "")
+            if not _is_engineering_role(title):
+                continue
+            content = str(job.get("content", "") or "")
+            combined = (title + " " + content).lower()
+            if not any(kw in combined for kw in skill_keywords):
+                continue
+            url = str(job.get("absolute_url", "") or "")
+            domain = _best_domain(url, company_name)
+            results.append(_make_job(
+                company=company_name,
+                title=title,
+                description=re.sub(r"<[^>]+>", " ", content)[:2000],
+                contact_name="Hiring Team",
+                job_url=url,
+                source="greenhouse",
+                domain=domain,
+            ))
+        return results
+    except Exception:
+        return []
+
+
+def scrape_greenhouse() -> list[dict]:
+    """Fetch jobs from 60+ companies using Greenhouse ATS public API (no auth)."""
+    skill_keywords = [s.lower() for s in CORE_SKILLS + PRIMARY_SKILLS + AI_SKILLS]
+    all_results: list[dict] = []
+
+    logger.info("[Greenhouse] Querying %d boards (20 parallel workers)", len(_GREENHOUSE_BOARDS))
+    with ThreadPoolExecutor(max_workers=20) as pool:
+        futures = {
+            pool.submit(_fetch_greenhouse_board, slug, name, skill_keywords): (slug, name)
+            for slug, name in _GREENHOUSE_BOARDS.items()
+        }
+        for future in as_completed(futures):
+            all_results.extend(future.result())
+
+    logger.info("[Greenhouse] %d matching jobs", len(all_results))
+    return all_results
+
+
+# ---------------------------------------------------------------------------
+# SCRAPER 11: Lever ATS (public API, no auth)
+# ---------------------------------------------------------------------------
+
+# Companies known (or likely) to use Lever. 404s are silently skipped.
+_LEVER_COMPANIES: dict[str, str] = {
+    "coinbase": "Coinbase",
+    "netflix": "Netflix",
+    "postman": "Postman",
+    "netlify": "Netlify",
+    "twitch": "Twitch",
+    "robinhood": "Robinhood",
+    "lyft": "Lyft",
+    "metabase": "Metabase",
+    "posthog": "PostHog",
+    "replit": "Replit",
+    "vercel": "Vercel",
+    "supabase": "Supabase",
+    "neon": "Neon",
+    "render": "Render",
+    "railway": "Railway",
+    "dagger": "Dagger",
+    "modal": "Modal",
+    "warp": "Warp",
+    "linear": "Linear",
+    "prefect": "Prefect",
+    "inngest": "Inngest",
+    "resend": "Resend",
+    "clerk": "Clerk",
+    "liveblocks": "Liveblocks",
+    "cal": "Cal.com",
+    "formbricks": "Formbricks",
+    "documenso": "Documenso",
+    "trigger": "Trigger.dev",
+    "turso": "Turso",
+    "upstash": "Upstash",
+    "fly": "Fly.io",
+    "cube": "Cube Dev",
+    "duckdb": "DuckDB",
+    "motherduck": "MotherDuck",
+    "qdrant": "Qdrant",
+    "weaviate": "Weaviate",
+    "chroma": "Chroma",
+    "langchain": "LangChain",
+    "llamaindex": "LlamaIndex",
+}
+
+
+def _fetch_lever_postings(company: str, company_name: str, skill_keywords: list[str]) -> list[dict]:
+    """Fetch postings from Lever for one company; silently skip 404/403."""
+    try:
+        resp = requests.get(
+            f"https://api.lever.co/v0/postings/{company}?mode=json",
+            timeout=15,
+        )
+        if resp.status_code in (403, 404, 410):
+            return []
+        resp.raise_for_status()
+        postings = resp.json()
+        if not isinstance(postings, list):
+            return []
+
+        results: list[dict] = []
+        for posting in postings:
+            if len(results) >= 3:
+                break
+            title = str(posting.get("text", "") or "")
+            if not _is_engineering_role(title):
+                continue
+            # Combine all content sections
+            desc_plain = str(posting.get("descriptionPlain", "") or posting.get("description", "") or "")
+            lists_text = " ".join(
+                str(lst.get("content", ""))
+                for lst in (posting.get("lists") or [])
+                if isinstance(lst, dict)
+            )
+            additional = str(posting.get("additional", "") or "")
+            full_text = " ".join([desc_plain, lists_text, additional])
+            combined = (title + " " + full_text).lower()
+            if not any(kw in combined for kw in skill_keywords):
+                continue
+            url = str(posting.get("hostedUrl", "") or posting.get("applyUrl", "") or "")
+            domain = _best_domain(url, company_name)
+            results.append(_make_job(
+                company=company_name,
+                title=title,
+                description=re.sub(r"<[^>]+>", " ", full_text)[:2000],
+                contact_name="Hiring Team",
+                job_url=url,
+                source="lever",
+                domain=domain,
+            ))
+        return results
+    except Exception:
+        return []
+
+
+def scrape_lever() -> list[dict]:
+    """Fetch jobs from companies using Lever ATS (public API, 404s silently skipped)."""
+    skill_keywords = [s.lower() for s in CORE_SKILLS + PRIMARY_SKILLS + AI_SKILLS]
+    all_results: list[dict] = []
+
+    logger.info("[Lever] Querying %d companies (20 parallel workers)", len(_LEVER_COMPANIES))
+    with ThreadPoolExecutor(max_workers=20) as pool:
+        futures = {
+            pool.submit(_fetch_lever_postings, slug, name, skill_keywords): (slug, name)
+            for slug, name in _LEVER_COMPANIES.items()
+        }
+        for future in as_completed(futures):
+            all_results.extend(future.result())
+
+    logger.info("[Lever] %d matching jobs", len(all_results))
+    return all_results
+
+
+# ---------------------------------------------------------------------------
+# SCRAPER 12: Ashby ATS (public API, no auth) — popular with modern startups
+# ---------------------------------------------------------------------------
+
+_ASHBY_BOARDS: dict[str, str] = {
+    "Linear": "Linear",
+    "mercury": "Mercury",
+    "Warp": "Warp",
+    "Modal": "Modal",
+    "Railway": "Railway",
+    "Render": "Render",
+    "Vercel": "Vercel",
+    "Supabase": "Supabase",
+    "PostHog": "PostHog",
+    "PlanetScale": "PlanetScale",
+    "Cal.com": "Cal.com",
+    "Dagger": "Dagger",
+    "Prefect": "Prefect",
+    "Inngest": "Inngest",
+    "Resend": "Resend",
+    "Clerk": "Clerk",
+    "Liveblocks": "Liveblocks",
+    "Trigger.dev": "Trigger.dev",
+    "Turso": "Turso",
+    "Upstash": "Upstash",
+    "Neon": "Neon",
+    "Fly.io": "Fly.io",
+    "Qdrant": "Qdrant",
+    "Weaviate": "Weaviate",
+    "LangChain": "LangChain",
+    "MotherDuck": "MotherDuck",
+    "Replit": "Replit",
+    "Formbricks": "Formbricks",
+    "Documenso": "Documenso",
+    "Twenty": "Twenty CRM",
+}
+
+
+def _fetch_ashby_board(board_id: str, company_name: str, skill_keywords: list[str]) -> list[dict]:
+    """Fetch one Ashby public job board; silently skip non-200 responses."""
+    try:
+        resp = requests.post(
+            "https://api.ashbyhq.com/posting-api/job-board",
+            json={"organizationHostedJobsPageName": board_id},
+            timeout=15,
+        )
+        if resp.status_code in (400, 404, 422):
+            return []
+        resp.raise_for_status()
+        data = resp.json()
+        jobs_raw = data.get("jobs", []) or data.get("jobPostings", [])
+
+        results: list[dict] = []
+        for job in jobs_raw:
+            if len(results) >= 3:
+                break
+            title = str(job.get("title", "") or job.get("jobTitle", "") or "")
+            if not _is_engineering_role(title):
+                continue
+            desc_html = str(job.get("descriptionHtml", "") or job.get("description", "") or "")
+            desc_plain = re.sub(r"<[^>]+>", " ", desc_html)
+            combined = (title + " " + desc_plain).lower()
+            if not any(kw in combined for kw in skill_keywords):
+                continue
+            url = str(job.get("jobUrl", "") or job.get("applyUrl", "") or "")
+            domain = _best_domain(url, company_name)
+            results.append(_make_job(
+                company=company_name,
+                title=title,
+                description=desc_plain[:2000],
+                contact_name="Hiring Team",
+                job_url=url,
+                source="ashby",
+                domain=domain,
+            ))
+        return results
+    except Exception:
+        return []
+
+
+def scrape_ashby() -> list[dict]:
+    """Fetch jobs from modern startups using Ashby ATS public API (no auth)."""
+    skill_keywords = [s.lower() for s in CORE_SKILLS + PRIMARY_SKILLS + AI_SKILLS]
+    all_results: list[dict] = []
+
+    logger.info("[Ashby] Querying %d boards (15 parallel workers)", len(_ASHBY_BOARDS))
+    with ThreadPoolExecutor(max_workers=15) as pool:
+        futures = {
+            pool.submit(_fetch_ashby_board, board_id, name, skill_keywords): (board_id, name)
+            for board_id, name in _ASHBY_BOARDS.items()
+        }
+        for future in as_completed(futures):
+            all_results.extend(future.result())
+
+    logger.info("[Ashby] %d matching jobs", len(all_results))
+    return all_results
+
+
+# ---------------------------------------------------------------------------
+# SCRAPER 13: Wellfound (formerly AngelList) — startup job board
+# ---------------------------------------------------------------------------
+
+def scrape_wellfound() -> list[dict]:
+    """Scrape Wellfound startup job listings. Tries __NEXT_DATA__ then BeautifulSoup."""
+    results: list[dict] = []
+    skill_keywords = [s.lower() for s in CORE_SKILLS + PRIMARY_SKILLS + AI_SKILLS]
+
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+                      "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+    }
+
+    urls_to_try = [
+        "https://wellfound.com/jobs?role=Software+Engineer&remote=true",
+        "https://wellfound.com/jobs?role=Backend+Engineer&remote=true",
+    ]
+
+    for page_url in urls_to_try:
+        try:
+            resp = requests.get(page_url, headers=headers, timeout=20)
+            if not resp.ok:
+                continue
+
+            # Strategy 1: extract __NEXT_DATA__ JSON
+            import json as _json
+            match = re.search(r'<script id="__NEXT_DATA__"[^>]*>(.+?)</script>', resp.text, re.DOTALL)
+            if match:
+                page_data = _json.loads(match.group(1))
+                # Try multiple known nested paths
+                jobs_raw = (
+                    page_data.get("props", {}).get("pageProps", {}).get("jobs", [])
+                    or page_data.get("props", {}).get("pageProps", {}).get("initialData", {}).get("jobs", [])
+                    or []
+                )
+                for job in jobs_raw:
+                    role = job.get("role", {}) or job
+                    title = str(role.get("title", "") or job.get("title", "") or "")
+                    if not _is_engineering_role(title):
+                        continue
+                    desc = str(job.get("description", "") or "")
+                    combined = (title + " " + desc).lower()
+                    if not any(kw in combined for kw in skill_keywords):
+                        continue
+                    startup = job.get("startup", {}) or job.get("company", {}) or {}
+                    company = str(startup.get("name", "") or "")
+                    if not company:
+                        continue
+                    slug = startup.get("slug", "")
+                    url = str(job.get("canonicalUrl", "") or (f"https://wellfound.com/company/{slug}" if slug else ""))
+                    domain = _best_domain(url, company)
+                    results.append(_make_job(
+                        company=company, title=title,
+                        description=desc[:2000],
+                        contact_name="Hiring Team",
+                        job_url=url, source="wellfound", domain=domain,
+                    ))
+
+            # Strategy 2: BeautifulSoup parse job cards
+            if not results:
+                try:
+                    from bs4 import BeautifulSoup
+                    soup = BeautifulSoup(resp.text, "html.parser")
+                    seen: set[str] = set()
+                    for card in soup.find_all(["div", "li"], class_=re.compile(r"job|listing|posting|startup", re.I))[:80]:
+                        title_el = card.find(["h2", "h3", "a"], class_=re.compile(r"title|role", re.I))
+                        company_el = card.find(class_=re.compile(r"company|startup|name", re.I))
+                        if not title_el or not company_el:
+                            continue
+                        title = title_el.get_text(strip=True)
+                        company = company_el.get_text(strip=True)
+                        if not _is_engineering_role(title) or not company or company.lower() in seen:
+                            continue
+                        combined = (title + " " + company).lower()
+                        if not any(kw in combined for kw in skill_keywords):
+                            continue
+                        seen.add(company.lower())
+                        link_el = card.find("a", href=True)
+                        url = link_el["href"] if link_el else ""
+                        if url and not url.startswith("http"):
+                            url = "https://wellfound.com" + url
+                        domain = _best_domain(url, company)
+                        results.append(_make_job(
+                            company=company, title=title, description="",
+                            contact_name="Hiring Team",
+                            job_url=url, source="wellfound", domain=domain,
+                        ))
+                except ImportError:
+                    logger.debug("[Wellfound] bs4 not available for fallback scrape")
+
+            if results:
+                break  # got results from first successful URL
+
+        except Exception as exc:
+            logger.warning("[Wellfound] Error on %s: %s", page_url, exc)
+
+    logger.info("[Wellfound] %d matching jobs", len(results))
+    return results
+
+
+# ---------------------------------------------------------------------------
+# SCRAPER 14: BuiltIn — tech job board (HTML scrape; API returns 405)
+# ---------------------------------------------------------------------------
+
+def scrape_builtin() -> list[dict]:
+    """Scrape BuiltIn remote engineering jobs via __NEXT_DATA__ then BeautifulSoup."""
+    results: list[dict] = []
+    skill_keywords = [s.lower() for s in CORE_SKILLS + PRIMARY_SKILLS + AI_SKILLS]
+    seen_companies: set[str] = set()
+
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+                      "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+    }
+
+    urls_to_try = [
+        "https://builtin.com/jobs/remote/dev-engineering",
+        "https://builtin.com/jobs/remote?specializations=Software+Engineer%2FProgrammer",
+        "https://builtin.com/jobs/remote?specializations=Backend+Engineer",
+    ]
+
+    for page_url in urls_to_try:
+        try:
+            resp = requests.get(page_url, headers=headers, timeout=20)
+            if not resp.ok:
+                logger.debug("[BuiltIn] Non-200 on %s: %d", page_url, resp.status_code)
+                continue
+
+            # Strategy 1: __NEXT_DATA__ JSON
+            import json as _json
+            match = re.search(r'<script id="__NEXT_DATA__"[^>]*>(.+?)</script>', resp.text, re.DOTALL)
+            if match:
+                try:
+                    page_data = _json.loads(match.group(1))
+                    page_props = page_data.get("props", {}).get("pageProps", {})
+                    jobs_raw = (
+                        page_props.get("jobs", [])
+                        or page_props.get("jobListings", [])
+                        or []
+                    )
+                    for job in jobs_raw:
+                        title = str(job.get("title", "") or job.get("jobTitle", "") or "")
+                        if not _is_engineering_role(title):
+                            continue
+                        company_obj = job.get("company", {}) or {}
+                        company = str(company_obj.get("name", "") or job.get("companyName", "") or "")
+                        if not company or company.lower() in seen_companies:
+                            continue
+                        desc = str(job.get("description", "") or "")
+                        combined = (title + " " + desc).lower()
+                        if not any(kw in combined for kw in skill_keywords):
+                            continue
+                        seen_companies.add(company.lower())
+                        job_url = str(job.get("url", "") or job.get("jobUrl", "") or "")
+                        if job_url and not job_url.startswith("http"):
+                            job_url = "https://builtin.com" + job_url
+                        domain = _best_domain(job_url, company)
+                        results.append(_make_job(
+                            company=company, title=title,
+                            description=desc[:2000],
+                            contact_name="Hiring Team",
+                            job_url=job_url, source="builtin", domain=domain,
+                        ))
+                except Exception:
+                    pass
+
+            # Strategy 2: BeautifulSoup parse
+            if not results:
+                try:
+                    from bs4 import BeautifulSoup
+                    soup = BeautifulSoup(resp.text, "html.parser")
+                    # BuiltIn uses article tags or divs with data-id for job cards
+                    job_cards = (
+                        soup.find_all("article")
+                        or soup.find_all("div", attrs={"data-id": True})
+                        or soup.find_all("li", class_=re.compile(r"job|listing", re.I))
+                    )
+                    for card in job_cards[:60]:
+                        title_el = (
+                            card.find(["h2", "h3"], class_=re.compile(r"title|position", re.I))
+                            or card.find("a", class_=re.compile(r"title|job", re.I))
+                        )
+                        company_el = card.find(class_=re.compile(r"company|employer", re.I))
+                        if not title_el:
+                            continue
+                        title = title_el.get_text(strip=True)
+                        company = company_el.get_text(strip=True) if company_el else ""
+                        if not title or not _is_engineering_role(title):
+                            continue
+                        if not company or company.lower() in seen_companies:
+                            continue
+                        combined = (title + " " + company).lower()
+                        if not any(kw in combined for kw in skill_keywords):
+                            continue
+                        seen_companies.add(company.lower())
+                        link_el = card.find("a", href=True)
+                        job_url = link_el["href"] if link_el else ""
+                        if job_url and not job_url.startswith("http"):
+                            job_url = "https://builtin.com" + job_url
+                        domain = _best_domain(job_url, company)
+                        results.append(_make_job(
+                            company=company, title=title, description="",
+                            contact_name="Hiring Team",
+                            job_url=job_url, source="builtin", domain=domain,
+                        ))
+                except ImportError:
+                    logger.debug("[BuiltIn] bs4 not available for fallback scrape")
+
+            if results:
+                break
+
+        except Exception as exc:
+            logger.warning("[BuiltIn] Error on %s: %s", page_url, exc)
+
+    logger.info("[BuiltIn] %d matching jobs", len(results))
+    return results
+
+
+# ---------------------------------------------------------------------------
 # Unified scrape_all
 # ---------------------------------------------------------------------------
 
@@ -856,6 +1421,11 @@ def scrape_all() -> list[dict]:
         ("yc_jobs",          scrape_yc_jobs),
         ("hn_hiring",        scrape_hn_hiring),
         ("producthunt",      scrape_producthunt),
+        ("greenhouse",       scrape_greenhouse),
+        ("lever",            scrape_lever),
+        ("ashby",            scrape_ashby),
+        ("wellfound",        scrape_wellfound),
+        ("builtin",          scrape_builtin),
     ]
 
     for name, fn in scrapers:
@@ -881,11 +1451,21 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     print(f"Search terms ({len(_ALL_JOBSPY_TERMS)}): {_ALL_JOBSPY_TERMS}\n")
 
-    print("Testing fast scrapers (no JobSpy/Twitter)...")
-    for name, fn in [("RemoteOK", scrape_remoteok), ("WeWorkRemotely", scrape_weworkremotely),
-                     ("Remotive", scrape_remotive), ("YC/WorkAtAStartup", scrape_yc_jobs),
-                     ("HN Hiring", scrape_hn_hiring), ("ProductHunt", scrape_producthunt),
-                     ("LinkedIn Posts", scrape_linkedin_posts)]:
+    print("Testing ATS scrapers (Greenhouse, Lever, Ashby)...")
+    for name, fn in [
+        ("Greenhouse",        scrape_greenhouse),
+        ("Lever",             scrape_lever),
+        ("Ashby",             scrape_ashby),
+        ("Wellfound",         scrape_wellfound),
+        ("BuiltIn",           scrape_builtin),
+        ("RemoteOK",          scrape_remoteok),
+        ("WeWorkRemotely",    scrape_weworkremotely),
+        ("Remotive",          scrape_remotive),
+        ("YC/WorkAtAStartup", scrape_yc_jobs),
+        ("HN Hiring",         scrape_hn_hiring),
+        ("ProductHunt",       scrape_producthunt),
+        ("LinkedIn Posts",    scrape_linkedin_posts),
+    ]:
         jobs = fn()
         print(f"[{name}] {len(jobs)} jobs")
         if jobs:

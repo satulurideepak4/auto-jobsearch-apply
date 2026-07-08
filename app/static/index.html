@@ -348,7 +348,7 @@ tr:hover td{background:rgba(255,255,255,.02)}
     </div>
     <div class="tbl-wrap">
       <table>
-        <thead><tr><th>Title</th><th>Company</th><th>Location</th><th>Source</th><th>Date</th></tr></thead>
+        <thead><tr><th>Title</th><th>Company</th><th>Location</th><th>Source</th><th>Date</th><th style="min-width:120px">Action</th></tr></thead>
         <tbody id="jobs-tbody"></tbody>
       </table>
     </div>
@@ -397,7 +397,7 @@ tr:hover td{background:rgba(255,255,255,.02)}
           <div class="stat-lbl">Total Companies Contacted</div>
         </div>
         <div class="stat">
-          <div class="stat-val" style="color:var(--success)">9</div>
+          <div class="stat-val" style="color:var(--success)">14</div>
           <div class="stat-lbl">Sources Active</div>
         </div>
       </div>
@@ -797,23 +797,137 @@ function closeModal(e) {
 // ── Jobs ─────────────────────────────────────────────────────────
 async function loadJobs(offset = 0) {
   const tbody = document.getElementById('jobs-tbody');
-  tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:32px"><span class="spinner" style="border-top-color:var(--muted)"></span></td></tr>`;
+  tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:32px"><span class="spinner" style="border-top-color:var(--muted)"></span></td></tr>`;
   try {
     const data = await get(`${API}/jobs?limit=25&offset=${offset}`);
-    if (!data.length) { tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:40px">No jobs yet — run a scrape first.</td></tr>`; return; }
-    tbody.innerHTML = data.map(j => `<tr>
+    if (!data.length) { tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:40px">No jobs yet — run a scrape first.</td></tr>`; return; }
+    tbody.innerHTML = data.map(j => `<tr id="jrow-${j.id}">
       <td><a href="${esc(j.job_url)}" target="_blank" style="color:var(--text);font-weight:500;text-decoration:none">${esc(j.title)}</a></td>
       <td style="color:var(--muted)">${esc(j.company)}</td>
       <td style="color:var(--muted)">${esc(j.location||'')}</td>
       <td><span class="badge b-pending" style="text-transform:capitalize">${esc(j.source)}</span></td>
       <td style="color:var(--muted)">${j.scraped_at ? new Date(j.scraped_at).toLocaleDateString() : ''}</td>
+      <td id="jact-${j.id}">
+        <button class="btn btn-primary btn-sm" onclick="applyJob('${j.id}','${esc(j.job_url)}','${esc(j.source)}',this)">
+          ▶ Apply
+        </button>
+      </td>
     </tr>`).join('');
 
     const pag = document.getElementById('jobs-pag');
     pag.innerHTML = '';
     if (offset > 0) { const b=btn_el('← Prev','btn-ghost',()=>loadJobs(offset-25)); pag.appendChild(b); }
     if (data.length===25) { const b=btn_el('Next →','btn-ghost',()=>loadJobs(offset+25)); pag.appendChild(b); }
-  } catch(e) { tbody.innerHTML = `<tr><td colspan="5">${errBox(e)}</td></tr>`; }
+  } catch(e) { tbody.innerHTML = `<tr><td colspan="6">${errBox(e)}</td></tr>`; }
+}
+
+async function applyJob(jobId, jobUrl, source, btn) {
+  const cell = document.getElementById('jact-' + jobId);
+  cell.innerHTML = '<span class="spinner"></span> <span style="color:var(--muted);font-size:12px">Starting…</span>';
+
+  try {
+    let appId;
+
+    if (PORTAL_SOURCES.has(source)) {
+      // For portal jobs: find if there's an existing match to use portal-native apply
+      let matchId = null;
+      try {
+        const allMatches = await get(`${API}/matches?status=pending`);
+        // Also check approved matches for this job
+        const approvedMatches = await get(`${API}/matches?status=approved`);
+        const all = [...allMatches, ...approvedMatches];
+        const m = all.find(m => m.job && m.job.job_url === jobUrl);
+        if (m) matchId = m.match_id;
+      } catch(e) { /* ignore — fallback to direct apply */ }
+
+      if (matchId) {
+        // Use portal-native apply
+        cell.innerHTML = '<span class="spinner"></span> <span style="color:var(--muted);font-size:12px">Portal apply…</span>';
+        const res = await post(`${API}/matches/${matchId}/portal-apply`, {});
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Portal apply failed');
+        appId = data.application_id;
+      } else {
+        // No match record — fall through to direct apply pipeline
+        const res = await post(`${API}/apply`, { url: jobUrl, auto_submit: true, force: true });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Apply failed');
+        appId = data.application_id;
+      }
+    } else {
+      // Direct URL apply (jobspy / linkedin / indeed etc.)
+      const res = await post(`${API}/apply`, { url: jobUrl, auto_submit: true, force: true });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Apply failed');
+      appId = data.application_id;
+    }
+
+    // Poll for completion
+    let elapsed = 0;
+    const poll = setInterval(async () => {
+      elapsed += 5;
+      try {
+        const app = await get(`${API}/applications/${appId}`);
+        if (app.status === 'submitted') {
+          clearInterval(poll);
+          cell.innerHTML = '<span class="badge b-submitted" style="font-size:11px">✓ Submitted</span>';
+        } else if (app.status === 'filled') {
+          clearInterval(poll);
+          cell.innerHTML = '<span class="badge b-filled" style="font-size:11px">Form filled</span>';
+        } else if (app.status === 'rejected') {
+          clearInterval(poll);
+          const note = app.notes || '';
+          cell.innerHTML = `<span class="badge b-rejected" style="font-size:11px" title="${esc(note)}">✗ Skipped</span>
+            <button class="btn btn-ghost btn-sm" style="margin-top:4px" onclick="applyJobForce('${jobId}','${esc(jobUrl)}')">Force ▶</button>`;
+        } else if (app.status === 'failed') {
+          clearInterval(poll);
+          cell.innerHTML = `<span class="badge b-rejected" style="font-size:11px">✗ Failed</span>
+            <button class="btn btn-ghost btn-sm" style="margin-top:4px" onclick="applyJob('${jobId}','${esc(jobUrl)}','${esc(source)}',null)">↻ Retry</button>`;
+        } else {
+          const label = app.status === 'applying' ? 'Applying' : 'Running';
+          cell.innerHTML = `<span class="spinner"></span> <span style="color:var(--muted);font-size:12px">${label} (${elapsed}s)</span>`;
+          if (elapsed >= 300) {
+            clearInterval(poll);
+            cell.innerHTML = `<span style="color:var(--muted);font-size:12px">Timed out</span>
+              <button class="btn btn-ghost btn-sm" onclick="applyJob('${jobId}','${esc(jobUrl)}','${esc(source)}',null)">↻ Retry</button>`;
+          }
+        }
+      } catch(e) { /* network blip */ }
+    }, 5000);
+
+  } catch(e) {
+    cell.innerHTML = `<span style="color:var(--danger);font-size:11px" title="${esc(e.message)}">✗ Error</span>
+      <button class="btn btn-ghost btn-sm" onclick="applyJob('${jobId}','${esc(jobUrl)}','${esc(source)}',null)">↻ Retry</button>`;
+  }
+}
+
+async function applyJobForce(jobId, jobUrl) {
+  const cell = document.getElementById('jact-' + jobId);
+  cell.innerHTML = '<span class="spinner"></span> <span style="color:var(--muted);font-size:12px">Force applying…</span>';
+  try {
+    const res = await post(`${API}/apply`, { url: jobUrl, auto_submit: true, force: true });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Apply failed');
+    const appId = data.application_id;
+    let elapsed = 0;
+    const poll = setInterval(async () => {
+      elapsed += 5;
+      try {
+        const app = await get(`${API}/applications/${appId}`);
+        if (['submitted','filled','rejected','failed'].includes(app.status)) {
+          clearInterval(poll);
+          const badge = app.status === 'submitted' ? 'b-submitted' : app.status === 'filled' ? 'b-filled' : 'b-rejected';
+          const label = app.status === 'submitted' ? '✓ Submitted' : app.status === 'filled' ? 'Form filled' : '✗ ' + (app.status);
+          cell.innerHTML = `<span class="badge ${badge}" style="font-size:11px">${label}</span>`;
+        } else {
+          cell.innerHTML = `<span class="spinner"></span> <span style="color:var(--muted);font-size:12px">Running (${elapsed}s)</span>`;
+          if (elapsed >= 300) { clearInterval(poll); cell.innerHTML = '<span style="color:var(--muted);font-size:12px">Timed out</span>'; }
+        }
+      } catch(e) { /* blip */ }
+    }, 5000);
+  } catch(e) {
+    cell.innerHTML = `<span style="color:var(--danger);font-size:11px">✗ ${esc(e.message)}</span>`;
+  }
 }
 
 // ── Search Roles Panel ───────────────────────────────────────────
