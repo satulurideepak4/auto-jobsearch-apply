@@ -1,0 +1,12 @@
+jobspy
+scweet
+feedparser
+pdfplumber
+python-whois
+dnspython
+google-auth
+google-auth-oauthlib
+google-api-python-client
+vertexai
+google-cloud-aiplatform
+requests

@@ -1,0 +1,118 @@
+# Job Board Configuration
+# ========================
+# Every entry here is crawled automatically when a scrape runs.
+#
+# To add a new job board:
+#   1. Add an entry below (no code changes needed for basic boards)
+#   2. Optionally create app/scraping/drivers/<name>.py for custom selector logic
+#
+# Template variables for search_url:
+#   {role}     — search term (URL-encoded, spaces → hyphens)
+#   {location} — location string (URL-encoded)
+#   {page}     — page number (1-based)
+#
+# Fields:
+#   name            Human-readable label shown in logs
+#   home_url        Homepage — used for cookie injection and login checks
+#   search_url      URL template to launch a job search
+#   region          "india" | "international" | "any"  (controls which search terms are used)
+#   requires_login  true if the board blocks results without auth
+#   auth_method     "cookie" | "none"
+#   job_link_hints  List of CSS selectors for job title/link elements (optional, improves accuracy)
+#   next_page_hints CSS selectors for the "Next page" control (optional)
+#   scroll_to_load  true for infinite-scroll boards (Wellfound, LinkedIn-style)
+#   enabled         Set false to disable without deleting
+
+boards:
+
+  naukri:
+    name: "Naukri"
+    home_url: "https://www.naukri.com"
+    search_url: "https://www.naukri.com/{role}-jobs-in-{location}?experience=0"
+    region: india
+    requires_login: true
+    auth_method: cookie
+    job_link_hints:
+      - "article.jobTuple a.title"
+      - "[class*='jobTitle'] a"
+      - "[class*='job-title'] a"
+      - "a[href*='/job-listings/']"
+      - ".row1 a"
+    next_page_hints:
+      - "a[class*='fright'][title='Next']"
+      - "a[aria-label='Next']"
+      - ".pagination li:last-child a"
+    enabled: true
+
+  instahyre:
+    name: "Instahyre"
+    home_url: "https://www.instahyre.com"
+    search_url: "https://www.instahyre.com/search-jobs/?keyword={role}&location={location}"
+    region: india
+    requires_login: true
+    auth_method: cookie
+    job_link_hints:
+      - "a[href*='/job/']"
+      - "a[href*='/jobs/']"
+      - ".job-listing a"
+      - "[class*='job-card'] a"
+    next_page_hints:
+      - "a[rel='next']"
+      - "a:text-is('Next')"
+      - "[aria-label='Next page']"
+    enabled: true
+
+  wellfound:
+    name: "Wellfound"
+    home_url: "https://wellfound.com"
+    search_url: "https://wellfound.com/jobs?q={role}&location_slugs={location}"
+    region: international
+    requires_login: true
+    auth_method: cookie
+    job_link_hints:
+      - "[data-test='JobSearchResult'] a[href*='/jobs/']"
+      - "[class*='JobListing'] a"
+      - "a[href*='/role/']"
+    scroll_to_load: true
+    enabled: true
+
+  # ── Examples: add any board below, no code changes needed ─────────────────
+
+  # dice:
+  #   name: "Dice"
+  #   home_url: "https://www.dice.com"
+  #   search_url: "https://www.dice.com/jobs?q={role}&location={location}"
+  #   region: international
+  #   requires_login: false
+  #   auth_method: none
+  #   job_link_hints:
+  #     - "a[data-cy='card-title-link']"
+  #   next_page_hints:
+  #     - "button[aria-label='Next Page']"
+  #   enabled: false
+
+  # remoteok:
+  #   name: "Remote OK"
+  #   home_url: "https://remoteok.com"
+  #   search_url: "https://remoteok.com/remote-{role}-jobs"
+  #   region: international
+  #   requires_login: false
+  #   auth_method: none
+  #   job_link_hints:
+  #     - "tr.job td h2 a"
+  #     - "a[itemprop='url']"
+  #   scroll_to_load: false
+  #   enabled: false
+
+  # linkedin:
+  #   name: "LinkedIn"
+  #   home_url: "https://www.linkedin.com"
+  #   search_url: "https://www.linkedin.com/jobs/search/?keywords={role}&location={location}"
+  #   region: any
+  #   requires_login: true
+  #   auth_method: cookie
+  #   job_link_hints:
+  #     - "a.job-card-container__link"
+  #     - ".jobs-search__results-list a[href*='/jobs/view/']"
+  #   scroll_to_load: true
+  #   enabled: false

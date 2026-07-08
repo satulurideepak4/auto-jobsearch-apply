@@ -1,0 +1,1384 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Job Agent</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0f1117;--surface:#1a1d27;--surface2:#22253a;--border:#2a2d3a;
+  --accent:#6366f1;--accent-dim:#4f46e5;
+  --success:#10b981;--warning:#f59e0b;--danger:#ef4444;
+  --text:#e2e8f0;--muted:#64748b;--sidebar:220px;
+}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:14px;display:flex;min-height:100vh}
+
+/* ── Sidebar ── */
+.sidebar{width:var(--sidebar);background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;padding:20px 0;position:fixed;top:0;left:0;bottom:0;z-index:10}
+.logo{padding:0 20px 20px;border-bottom:1px solid var(--border);margin-bottom:12px}
+.logo h1{font-size:17px;font-weight:800;color:var(--accent);letter-spacing:-0.3px}
+.logo p{font-size:11px;color:var(--muted);margin-top:3px}
+.nav-item{display:flex;align-items:center;gap:10px;padding:10px 20px;cursor:pointer;color:var(--muted);transition:all .15s;border-left:3px solid transparent;font-weight:500;user-select:none}
+.nav-item:hover{color:var(--text);background:var(--surface2)}
+.nav-item.active{color:var(--accent);background:rgba(99,102,241,.1);border-left-color:var(--accent)}
+.nav-icon{font-size:15px;width:20px;text-align:center}
+.sidebar-footer{margin-top:auto;padding:16px 20px;border-top:1px solid var(--border)}
+
+/* ── Main ── */
+.main{margin-left:var(--sidebar);flex:1;padding:32px;min-width:0}
+.section{display:none}
+.section.active{display:block}
+.page-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:28px}
+.page-title{font-size:22px;font-weight:700}
+.page-sub{color:var(--muted);font-size:13px;margin-top:3px}
+
+/* ── Cards ── */
+.card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:20px;margin-bottom:16px}
+
+/* ── Buttons ── */
+.btn{display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border-radius:7px;border:none;font-size:13px;font-weight:600;cursor:pointer;transition:all .15s;text-decoration:none;white-space:nowrap}
+.btn-primary{background:var(--accent);color:#fff}.btn-primary:hover{background:var(--accent-dim)}
+.btn-success{background:var(--success);color:#fff}.btn-success:hover{opacity:.85}
+.btn-danger{background:var(--danger);color:#fff}.btn-danger:hover{opacity:.85}
+.btn-ghost{background:var(--surface2);color:var(--text);border:1px solid var(--border)}.btn-ghost:hover{background:var(--border)}
+.btn-sm{padding:5px 11px;font-size:12px}
+.btn:disabled{opacity:.45;cursor:not-allowed;pointer-events:none}
+
+/* ── Inputs ── */
+.form-group{margin-bottom:16px}
+.label{display:block;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px}
+.input{width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:10px 14px;border-radius:7px;font-size:14px;outline:none;transition:border-color .15s}
+.input:focus{border-color:var(--accent)}
+.input::placeholder{color:var(--muted)}
+select.input{cursor:pointer}
+.row{display:flex;gap:10px}
+.row .input{flex:1}
+
+/* ── Toggles ── */
+.toggles{display:flex;gap:24px;margin:16px 0}
+.toggle{display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--muted);user-select:none}
+.toggle:hover{color:var(--text)}
+.toggle input{width:15px;height:15px;accent-color:var(--accent);cursor:pointer}
+
+/* ── Badges ── */
+.badge{display:inline-flex;align-items:center;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.3px}
+.b-pending{background:rgba(245,158,11,.15);color:var(--warning)}
+.b-approved{background:rgba(16,185,129,.15);color:var(--success)}
+.b-rejected{background:rgba(239,68,68,.15);color:var(--danger)}
+.b-filled{background:rgba(99,102,241,.15);color:var(--accent)}
+.b-submitted{background:rgba(16,185,129,.2);color:#34d399}
+.b-applying{background:rgba(99,102,241,.15);color:var(--accent)}
+
+/* ── Score circle ── */
+.score{display:inline-flex;align-items:center;justify-content:center;width:50px;height:50px;border-radius:50%;font-size:15px;font-weight:800;flex-shrink:0}
+.s-high{background:rgba(16,185,129,.12);color:var(--success);border:2px solid var(--success)}
+.s-mid{background:rgba(245,158,11,.12);color:var(--warning);border:2px solid var(--warning)}
+.s-low{background:rgba(239,68,68,.12);color:var(--danger);border:2px solid var(--danger)}
+
+/* ── Match card ── */
+.match-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:20px;margin-bottom:14px;display:flex;gap:18px;align-items:flex-start;transition:border-color .2s}
+.match-card:hover{border-color:#3a3d5a}
+.m-info{flex:1;min-width:0}
+.m-title{font-size:15px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.m-company{color:var(--muted);font-size:13px;margin:3px 0 8px}
+.m-reason{font-size:12px;color:#94a3b8;line-height:1.55;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;margin-bottom:10px}
+.chips{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:12px}
+.chip{padding:2px 8px;border-radius:4px;font-size:11px;font-weight:500}
+.c-match{background:rgba(16,185,129,.12);color:#34d399}
+.c-miss{background:rgba(239,68,68,.12);color:#f87171}
+.m-actions{display:flex;gap:8px;flex-wrap:wrap}
+
+/* ── App card ── */
+.app-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px 20px;margin-bottom:12px;display:flex;align-items:center;gap:16px}
+.a-info{flex:1;min-width:0}
+.a-title{font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.a-company{color:var(--muted);font-size:12px;margin-top:2px}
+.a-note{font-size:11px;color:#f87171;margin-top:4px}
+.a-meta{font-size:11px;color:var(--muted);margin-top:3px}
+
+/* ── Pipeline tracker ── */
+.tracker{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:22px;margin-top:20px}
+.tracker-title{font-weight:600;margin-bottom:18px}
+.steps{display:flex}
+.step{flex:1;text-align:center;position:relative}
+.step::after{content:'';position:absolute;top:13px;left:50%;width:100%;height:2px;background:var(--border);z-index:0}
+.step:last-child::after{display:none}
+.dot{width:28px;height:28px;border-radius:50%;border:2px solid var(--border);background:var(--surface2);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;margin:0 auto 7px;position:relative;z-index:1;transition:all .3s}
+.dot.done{border-color:var(--success);background:rgba(16,185,129,.15);color:var(--success)}
+.dot.active{border-color:var(--accent);background:rgba(99,102,241,.15);color:var(--accent);animation:pulse 1.5s infinite}
+.dot.failed{border-color:var(--danger);background:rgba(239,68,68,.15);color:var(--danger)}
+.step-label{font-size:11px;color:var(--muted)}
+.tracker-msg{margin-top:14px;font-size:13px;color:var(--muted)}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(99,102,241,.4)}50%{box-shadow:0 0 0 6px rgba(99,102,241,0)}}
+
+/* ── Alerts ── */
+.alert{padding:12px 16px;border-radius:8px;margin-bottom:14px;font-size:13px;border:1px solid;display:none}
+.a-info{background:rgba(99,102,241,.1);border-color:rgba(99,102,241,.3);color:#a5b4fc}
+.a-success{background:rgba(16,185,129,.1);border-color:rgba(16,185,129,.3);color:#6ee7b7}
+.a-error{background:rgba(239,68,68,.1);border-color:rgba(239,68,68,.3);color:#fca5a5}
+
+/* ── Table ── */
+.tbl-wrap{background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden}
+table{width:100%;border-collapse:collapse}
+th{text-align:left;padding:10px 14px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);border-bottom:1px solid var(--border)}
+td{padding:12px 14px;font-size:13px;border-bottom:1px solid var(--border)}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:rgba(255,255,255,.02)}
+
+/* ── Modal ── */
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.75);display:none;align-items:center;justify-content:center;z-index:50}
+.overlay.open{display:flex}
+.modal{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:28px;max-width:700px;width:92%;max-height:88vh;overflow-y:auto}
+.modal-hdr{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;gap:12px}
+.modal-title{font-size:16px;font-weight:700;line-height:1.3}
+.modal-close{background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;flex-shrink:0;padding:2px 6px;border-radius:4px}
+.modal-close:hover{color:var(--text);background:var(--surface2)}
+.sec-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin:18px 0 8px}
+.summary-box{font-size:13px;line-height:1.7;color:#cbd5e1;background:var(--surface2);padding:14px;border-radius:8px}
+.bullet-list{list-style:none}
+.bullet-list li{padding:8px 0 8px 16px;border-bottom:1px solid var(--border);font-size:13px;color:#cbd5e1;position:relative;line-height:1.5}
+.bullet-list li::before{content:'▸';position:absolute;left:0;color:var(--accent)}
+.bullet-list li:last-child{border-bottom:none}
+
+/* ── Empty / Spinner ── */
+.empty{text-align:center;padding:60px 20px;color:var(--muted)}
+.empty-icon{font-size:38px;margin-bottom:10px}
+.empty-text{font-size:14px}
+.spinner{display:inline-block;width:14px;height:14px;border:2px solid rgba(255,255,255,.25);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ── Sidebar badge ── */
+.count-badge{margin-left:auto;background:var(--accent);color:#fff;border-radius:20px;padding:1px 7px;font-size:11px;font-weight:700;display:none}
+
+/* ── Stats ── */
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:28px}
+.stat{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px 20px}
+.stat-val{font-size:28px;font-weight:800;color:var(--accent)}
+.stat-lbl{font-size:12px;color:var(--muted);margin-top:4px}
+
+/* ── Portal cards ── */
+.portal-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:22px;display:flex;flex-direction:column;gap:14px;transition:border-color .2s}
+.portal-card.pc-ok{border-color:rgba(16,185,129,.3)}
+.portal-card.pc-warn{border-color:rgba(239,68,68,.3)}
+.pc-header{display:flex;align-items:center;gap:12px}
+.pc-icon{font-size:26px;line-height:1}
+.pc-name{font-size:16px;font-weight:700}
+.pc-domain{font-size:12px;color:var(--muted)}
+.pc-status{margin-left:auto;padding:4px 10px;border-radius:20px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.4px}
+.pcs-ok{background:rgba(16,185,129,.15);color:var(--success)}
+.pcs-warn{background:rgba(239,68,68,.15);color:var(--danger)}
+.pcs-pending{background:rgba(99,102,241,.15);color:var(--accent)}
+.pcs-connecting{background:rgba(245,158,11,.15);color:var(--warning)}
+.pc-details{font-size:12px;color:var(--muted);line-height:1.7}
+.pc-expiry{font-size:11px;color:var(--success)}
+.pc-expiry.expiring{color:var(--warning)}
+.pc-actions{display:flex;gap:8px;margin-top:4px}
+.pc-log{font-size:11px;color:var(--warning);font-family:monospace;background:rgba(0,0,0,.3);padding:6px 10px;border-radius:6px;display:none}
+</style>
+</head>
+<body>
+
+<!-- SIDEBAR -->
+<nav class="sidebar">
+  <div class="logo">
+    <h1>⚡ Job Agent</h1>
+    <p>Automated applications</p>
+  </div>
+  <div class="nav-item active" data-section="apply" onclick="nav(this,'apply')">
+    <span class="nav-icon">🚀</span> Apply from URL
+  </div>
+  <div class="nav-item" data-section="matches" onclick="nav(this,'matches')">
+    <span class="nav-icon">🎯</span> Matches
+    <span class="count-badge" id="match-badge"></span>
+  </div>
+  <div class="nav-item" data-section="applications" onclick="nav(this,'applications')">
+    <span class="nav-icon">📋</span> Applications
+  </div>
+  <div class="nav-item" data-section="jobs" onclick="nav(this,'jobs')">
+    <span class="nav-icon">💼</span> Jobs
+  </div>
+  <div class="nav-item" data-section="outreach" onclick="nav(this,'outreach')">
+    <span class="nav-icon">✉️</span> Outreach
+  </div>
+  <div class="nav-item" data-section="portals" onclick="nav(this,'portals')">
+    <span class="nav-icon">🔑</span> Portals
+    <span class="count-badge" id="portal-badge"></span>
+  </div>
+  <div class="sidebar-footer">
+    <button class="btn btn-ghost" style="width:100%;justify-content:center;margin-bottom:6px" onclick="openRolesPanel()">
+      ✏️ Search Roles
+    </button>
+    <button class="btn btn-ghost" style="width:100%;justify-content:center" id="scrape-btn" onclick="triggerScrape()">
+      🔍 Scrape Now
+    </button>
+  </div>
+</nav>
+
+<!-- ROLES PANEL OVERLAY -->
+<div id="roles-overlay" style="display:none;position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.6)" onclick="closeRolesPanel(event)">
+  <div style="position:absolute;right:0;top:0;bottom:0;width:480px;background:#1a1a2e;display:flex;flex-direction:column;box-shadow:-4px 0 32px rgba(0,0,0,.5)" onclick="event.stopPropagation()">
+    <div style="padding:20px 24px;border-bottom:1px solid #2d2d4e;display:flex;align-items:center;gap:12px">
+      <div style="flex:1">
+        <div style="font-size:16px;font-weight:700;color:#fff">Search Roles</div>
+        <div style="font-size:12px;color:var(--muted);margin-top:2px">LLM-detected from your resume · edit before scraping</div>
+      </div>
+      <button class="btn btn-ghost" style="padding:4px 10px;font-size:13px" onclick="closeRolesPanel()">✕</button>
+    </div>
+    <div style="flex:1;overflow-y:auto;padding:20px 24px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <div style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em">Detected Roles</div>
+        <button class="btn btn-ghost" style="font-size:11px;padding:3px 8px" id="roles-detect-btn" onclick="detectRoles()">↻ Re-detect</button>
+      </div>
+      <div id="roles-list" style="display:flex;flex-wrap:wrap;gap:8px;min-height:40px"></div>
+
+      <div style="margin-top:24px;margin-bottom:12px">
+        <div style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:12px">Add Custom Role</div>
+        <div style="display:flex;gap:8px">
+          <input id="roles-custom-input" class="input" style="flex:1;font-size:13px" placeholder="e.g. Senior Go Engineer" onkeydown="if(event.key==='Enter')addCustomRole()">
+          <button class="btn btn-primary" style="font-size:13px;padding:6px 14px" onclick="addCustomRole()">Add</button>
+        </div>
+      </div>
+      <div id="roles-msg" style="display:none;font-size:12px;margin-top:8px;color:var(--success)"></div>
+    </div>
+    <div style="padding:16px 24px;border-top:1px solid #2d2d4e;display:flex;gap:8px">
+      <button class="btn btn-danger" style="font-size:13px" onclick="clearAndScrape()">🗑️ Clear DB &amp; Scrape Fresh</button>
+      <button class="btn btn-primary" style="flex:1;font-size:13px" onclick="closeRolesPanel();triggerScrape()">🔍 Scrape Now</button>
+    </div>
+  </div>
+</div>
+
+<!-- GLOBAL PORTAL ALERT — shown when any session needs reconnection -->
+<div id="portal-global-alert" style="
+  display:none;position:fixed;top:0;left:220px;right:0;z-index:40;
+  background:#7c3aed;color:#fff;padding:10px 24px;font-size:13px;font-weight:600;
+  align-items:center;gap:12px;border-bottom:1px solid #6d28d9;
+">
+  <span>⚠</span>
+  <span id="portal-alert-text">Some portals need reconnection.</span>
+  <button onclick="nav(document.querySelector('[data-section=portals]'),'portals')"
+    style="background:rgba(255,255,255,.2);border:none;color:#fff;padding:4px 12px;border-radius:5px;font-size:12px;font-weight:700;cursor:pointer;margin-left:auto">
+    Go to Portals →
+  </button>
+  <button onclick="document.getElementById('portal-global-alert').style.display='none'"
+    style="background:none;border:none;color:rgba(255,255,255,.7);font-size:18px;cursor:pointer;padding:0 4px;line-height:1">✕</button>
+</div>
+
+<!-- MAIN -->
+<main class="main" id="main-content">
+
+  <!-- APPLY -->
+  <section id="s-apply" class="section active">
+    <div class="page-header">
+      <div>
+        <div class="page-title">Apply from URL</div>
+        <div class="page-sub">Paste any job link — score, tailor, and fill runs automatically in the background.</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="form-group">
+        <label class="label">Job Posting URL</label>
+        <div class="row">
+          <input class="input" id="job-url" type="url" placeholder="https://boards.greenhouse.io/company/jobs/123456">
+          <button class="btn btn-primary" id="apply-btn" onclick="submitApply()">🚀 Apply</button>
+        </div>
+      </div>
+      <div class="toggles">
+        <label class="toggle"><input type="checkbox" id="opt-submit"> Auto-submit form</label>
+        <label class="toggle"><input type="checkbox" id="opt-force"> Force apply (ignore score threshold)</label>
+      </div>
+      <div class="alert a-info" id="apply-alert"></div>
+    </div>
+
+    <div id="tracker-wrap" style="display:none">
+      <div class="tracker">
+        <div class="tracker-title">Pipeline Progress</div>
+        <div class="steps">
+          <div class="step"><div class="dot" id="d-fetch">1</div><div class="step-label">Fetch JD</div></div>
+          <div class="step"><div class="dot" id="d-score">2</div><div class="step-label">Score</div></div>
+          <div class="step"><div class="dot" id="d-tailor">3</div><div class="step-label">Tailor</div></div>
+          <div class="step"><div class="dot" id="d-fill">4</div><div class="step-label">Fill Form</div></div>
+          <div class="step"><div class="dot" id="d-done">5</div><div class="step-label">Done</div></div>
+        </div>
+        <div class="tracker-msg" id="tracker-msg">Starting pipeline…</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- MATCHES -->
+  <section id="s-matches" class="section">
+    <div class="page-header">
+      <div>
+        <div class="page-title">Matches</div>
+        <div class="page-sub">Jobs scored above your threshold. Approve to tailor and apply.</div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <select class="input" id="match-filter" style="width:140px" onchange="loadMatches()">
+          <option value="pending">Pending</option>
+          <option value="approved">Approved</option>
+          <option value="rejected">Rejected</option>
+        </select>
+        <button class="btn btn-ghost" onclick="loadMatches()">↻ Refresh</button>
+      </div>
+    </div>
+    <div id="matches-list"></div>
+  </section>
+
+  <!-- APPLICATIONS -->
+  <section id="s-applications" class="section">
+    <div class="page-header">
+      <div>
+        <div class="page-title">Applications</div>
+        <div class="page-sub">Track every application and view tailored materials.</div>
+      </div>
+      <button class="btn btn-ghost" onclick="loadApplications()">↻ Refresh</button>
+    </div>
+    <div id="apps-list"></div>
+  </section>
+
+  <!-- JOBS -->
+  <section id="s-jobs" class="section">
+    <div class="page-header">
+      <div>
+        <div class="page-title">Scraped Jobs</div>
+        <div class="page-sub">All jobs fetched by the nightly pipeline.</div>
+      </div>
+      <button class="btn btn-ghost" onclick="loadJobs(0)">↻ Refresh</button>
+    </div>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>Title</th><th>Company</th><th>Location</th><th>Source</th><th>Date</th></tr></thead>
+        <tbody id="jobs-tbody"></tbody>
+      </table>
+    </div>
+    <div id="jobs-pag" style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px"></div>
+  </section>
+
+  <!-- PORTALS -->
+  <section id="s-portals" class="section">
+    <div class="page-header">
+      <div>
+        <div class="page-title">Portal Connections</div>
+        <div class="page-sub">Connect your job portal accounts using Google login — sessions last ~60 days.</div>
+      </div>
+      <button class="btn btn-ghost" onclick="loadPortalStatus()">↻ Refresh</button>
+    </div>
+    <div id="portals-list" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px"></div>
+  </section>
+
+  <!-- OUTREACH -->
+  <section id="s-outreach" class="section">
+    <div class="page-header">
+      <div>
+        <div class="page-title">Outreach</div>
+        <div class="page-sub">Automated cold-email pipeline — scrape leads, score, and create Gmail drafts.</div>
+      </div>
+      <button class="btn btn-ghost" onclick="loadOutreachStatus()">↻ Refresh</button>
+    </div>
+
+    <!-- Sub-tab nav -->
+    <div style="display:flex;gap:6px;margin-bottom:20px" id="outreach-tabs">
+      <button class="btn btn-ghost" id="otab-pipeline" onclick="switchOutreachTab('pipeline')">Pipeline</button>
+      <button class="btn btn-ghost" id="otab-jobs" onclick="switchOutreachTab('jobs')">Jobs</button>
+      <button class="btn btn-ghost" id="otab-tracking" onclick="switchOutreachTab('tracking')">Tracking</button>
+    </div>
+
+    <!-- Pipeline tab -->
+    <div id="outreach-pipeline">
+      <!-- Stats row -->
+      <div class="stats" style="grid-template-columns:repeat(3,1fr)">
+        <div class="stat">
+          <div class="stat-val" id="o-drafted-today">–</div>
+          <div class="stat-lbl">Drafted Today / <span id="o-cap">15</span></div>
+        </div>
+        <div class="stat">
+          <div class="stat-val" id="o-total-contacted">–</div>
+          <div class="stat-lbl">Total Companies Contacted</div>
+        </div>
+        <div class="stat">
+          <div class="stat-val" style="color:var(--success)">9</div>
+          <div class="stat-lbl">Sources Active</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div style="display:flex;align-items:flex-end;gap:16px;flex-wrap:wrap;margin-bottom:16px">
+          <div class="form-group" style="margin:0">
+            <label class="label">Daily Cap</label>
+            <input class="input" id="o-cap-input" type="number" min="1" max="50" value="15" style="width:90px">
+          </div>
+          <label class="toggle" style="margin-bottom:2px">
+            <input type="checkbox" id="o-dry-run"> Dry run (no Gmail drafts)
+          </label>
+          <button class="btn btn-primary" id="o-run-btn" onclick="runOutreachPipeline()">▶ Run Outreach Pipeline</button>
+        </div>
+        <div class="alert a-info" id="o-alert" style="display:none"></div>
+      </div>
+
+      <!-- Live log -->
+      <div class="card" style="padding:16px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <span style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Live Log</span>
+          <span id="o-running-badge" style="display:none;font-size:11px;font-weight:700;color:var(--warning)">● RUNNING</span>
+        </div>
+        <div id="o-log" style="background:#0a0c13;font-family:monospace;font-size:12px;padding:12px;border-radius:8px;height:300px;overflow-y:auto;color:#a0aec0">
+          <span style="color:var(--muted)">No log yet — run the pipeline to see output here.</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Jobs tab -->
+    <div id="outreach-jobs" style="display:none">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <div style="display:flex;align-items:center;gap:16px">
+          <span id="o-jobs-meta" style="font-size:12px;color:var(--muted)"></span>
+          <label class="toggle" style="margin:0">
+            <input type="checkbox" id="o-jobs-relevant-only" onchange="loadOutreachJobs()" checked>
+            <span style="font-size:12px;color:var(--muted)">Relevant only</span>
+          </label>
+        </div>
+        <button class="btn btn-ghost" onclick="loadOutreachJobs()">↻ Refresh</button>
+      </div>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>Company</th><th>Title / Contact</th><th>Source</th><th>Score</th><th>Match Reason</th><th style="min-width:140px">Draft Email</th></tr></thead>
+          <tbody id="o-jobs-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Tracking tab -->
+    <div id="outreach-tracking" style="display:none">
+      <div style="display:flex;justify-content:flex-end;margin-bottom:12px">
+        <button class="btn btn-ghost" onclick="loadOutreachTracking()">↻ Refresh</button>
+      </div>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>Date</th><th>Company</th><th>Contact</th><th>Domain</th><th>Email</th><th>Draft</th><th>Status</th><th>Notes</th></tr></thead>
+          <tbody id="o-tracking-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<!-- MODAL -->
+<div class="overlay" id="modal-overlay" onclick="closeModal(event)">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-hdr">
+      <div class="modal-title" id="modal-title">Tailored Material</div>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div id="modal-body"></div>
+  </div>
+</div>
+
+<script>
+const API = '/api/v1';
+let poll = null;
+
+// ── Nav ──────────────────────────────────────────────────────────
+function nav(el, name) {
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById('s-' + name).classList.add('active');
+  if (name === 'matches') loadMatches();
+  if (name === 'applications') loadApplications();
+  if (name === 'jobs') loadJobs(0);
+  if (name === 'outreach') loadOutreachStatus();
+  if (name === 'portals') loadPortalStatus();
+}
+
+// ── Apply ────────────────────────────────────────────────────────
+async function submitApply() {
+  const url = document.getElementById('job-url').value.trim();
+  if (!url) { alert('apply-alert', 'error', 'Please enter a job URL.'); return; }
+
+  const auto_submit = document.getElementById('opt-submit').checked;
+  const force = document.getElementById('opt-force').checked;
+
+  setBtnLoading('apply-btn', true, '🚀 Apply');
+  hideAlert('apply-alert');
+
+  try {
+    const res = await post(`${API}/apply`, { url, auto_submit, force });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Request failed');
+
+    alert('apply-alert', 'info',
+      `Pipeline started — tracking <code style="background:rgba(255,255,255,.1);padding:1px 5px;border-radius:3px">${data.application_id}</code>`);
+    document.getElementById('tracker-wrap').style.display = 'block';
+    resetDots();
+    startPoll(data.application_id);
+  } catch(e) {
+    alert('apply-alert', 'error', e.message);
+    setBtnLoading('apply-btn', false, '🚀 Apply');
+  }
+}
+
+function resetDots() {
+  const nums = {fetch:1,score:2,tailor:3,fill:4,done:5};
+  Object.entries(nums).forEach(([k,v]) => { const d = document.getElementById('d-'+k); d.className='dot'; d.textContent=v; });
+}
+
+function dot(name, state) {
+  const el = document.getElementById('d-' + name);
+  const check = '✓';
+  const nums = {fetch:1,score:2,tailor:3,fill:4,done:5};
+  el.className = 'dot ' + state;
+  el.textContent = state === 'done' ? check : nums[name];
+}
+
+function msg(txt) { document.getElementById('tracker-msg').innerHTML = txt; }
+
+function startPoll(appId) {
+  clearInterval(poll);
+  let ticks = 0;
+  setDot: {
+    dot('fetch', 'active');
+    msg('Fetching job description from the URL…');
+  }
+  poll = setInterval(async () => {
+    ticks++;
+    try {
+      const res = await fetch(`${API}/applications/${appId}`);
+      const d = await res.json();
+      updateTracker(d, ticks);
+      if (['submitted','filled','rejected'].includes(d.status)) {
+        clearInterval(poll);
+        setBtnLoading('apply-btn', false, '🚀 Apply');
+      }
+    } catch(e) { /* network blip — keep polling */ }
+    if (ticks > 144) { clearInterval(poll); setBtnLoading('apply-btn', false, '🚀 Apply'); msg('Timed out — check Applications tab.'); }
+  }, 5000);
+}
+
+function updateTracker(d, ticks) {
+  const s = d.status;
+  const notes = d.notes || '';
+  const hasJob = d.job && d.job.title && !d.job.title.startsWith('Fetch');
+  const hasTailored = !!d.tailored_material;
+
+  if (s === 'rejected') {
+    if (notes.includes('Score') || notes.includes('threshold')) {
+      dot('fetch','done'); dot('score','failed');
+      msg(`❌ ${esc(notes)}`);
+    } else {
+      msg(`❌ ${esc(notes || 'Pipeline failed — check server logs.')}`);
+    }
+    alert('apply-alert', 'error', notes || 'Pipeline stopped.');
+    return;
+  }
+  if (s === 'submitted') {
+    ['fetch','score','tailor','fill','done'].forEach(x => dot(x,'done'));
+    msg('✅ Application submitted!');
+    alert('apply-alert', 'success', '🎉 Application submitted successfully! Check the Applications tab.');
+    return;
+  }
+  if (s === 'filled') {
+    ['fetch','score','tailor','fill','done'].forEach(x => dot(x,'done'));
+    msg('✅ Form filled — browser is open for your review.');
+    alert('apply-alert', 'success', 'Form filled. Browser is open — review and submit manually, or re-run with Auto-submit enabled.');
+    return;
+  }
+  if (hasTailored) { dot('fetch','done');dot('score','done');dot('tailor','done');dot('fill','active');msg('Filling the application form…'); return; }
+  if (hasJob)      { dot('fetch','done');dot('score','done');dot('tailor','active');msg('Tailoring resume to match this job…'); return; }
+  if (ticks > 3)   { dot('fetch','done');dot('score','active');msg('Scoring job match against your resume…'); return; }
+}
+
+// ── Matches ──────────────────────────────────────────────────────
+async function loadMatches() {
+  const status = document.getElementById('match-filter').value;
+  const el = document.getElementById('matches-list');
+  el.innerHTML = spinner_page();
+  try {
+    const data = await get(`${API}/matches?status=${status}`);
+    // Update sidebar badge
+    if (status === 'pending') {
+      const b = document.getElementById('match-badge');
+      b.textContent = data.length;
+      b.style.display = data.length ? 'inline' : 'none';
+    }
+    if (!data.length) { el.innerHTML = empty('🎯', `No ${status} matches.`); return; }
+    el.innerHTML = data.map(m => matchCard(m, status)).join('');
+  } catch(e) { el.innerHTML = errBox(e); }
+}
+
+const PORTAL_SOURCES = new Set(['naukri', 'instahyre', 'wellfound']);
+
+function matchCard(m, status) {
+  const s = m.score;
+  const sc = s >= 80 ? 's-high' : s >= 60 ? 's-mid' : 's-low';
+  const matched = (m.matched_skills || []).slice(0,6).map(x => `<span class="chip c-match">✓ ${esc(x)}</span>`).join('');
+  const missing = (m.missing_skills || []).slice(0,3).map(x => `<span class="chip c-miss">✗ ${esc(x)}</span>`).join('');
+  const isPortal = PORTAL_SOURCES.has(m.job.source);
+  const srcLabel = m.job.source ? `<span class="badge b-pending" style="text-transform:capitalize;font-size:10px">${esc(m.job.source)}</span> ` : '';
+
+  let actions;
+  if (status === 'pending') {
+    const portalBtn = isPortal
+      ? `<button class="btn btn-sm" style="background:rgba(99,102,241,.15);color:var(--accent);border:1px solid rgba(99,102,241,.4)" onclick="portalApplyMatch('${m.match_id}','${esc(m.job.source)}',this)">🎯 Portal Apply</button>`
+      : '';
+    actions = `<button class="btn btn-success btn-sm" onclick="approveMatch('${m.match_id}',this)">✓ Approve</button>
+               <button class="btn btn-danger btn-sm" onclick="rejectMatch('${m.match_id}',this)">✗ Reject</button>
+               ${portalBtn}`;
+  } else {
+    actions = `<span class="badge b-${status}">${status}</span>`;
+  }
+
+  const link = m.job.job_url ? `<a href="${esc(m.job.job_url)}" target="_blank" class="btn btn-ghost btn-sm">↗ Job</a>` : '';
+  return `<div class="match-card" id="mc-${m.match_id}">
+    <div class="score ${sc}">${s}</div>
+    <div class="m-info">
+      <div class="m-title">${esc(m.job.title)}</div>
+      <div class="m-company">${srcLabel}${esc(m.job.company)} · ${esc(m.job.location || '')}</div>
+      <div class="m-reason">${esc(m.reasoning || '')}</div>
+      <div class="chips">${matched}${missing}</div>
+      <div class="m-actions" id="ma-${m.match_id}">${actions}${link}</div>
+    </div>
+  </div>`;
+}
+
+async function portalApplyMatch(matchId, source, btn) {
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Starting…';
+
+  const actionsEl = document.getElementById('ma-' + matchId);
+
+  try {
+    const res = await post(`${API}/matches/${matchId}/portal-apply`, {});
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Failed to start portal apply');
+
+    const appId = data.application_id;
+    btn.innerHTML = '<span class="spinner"></span> Applying…';
+
+    let elapsed = 0;
+    const poll = setInterval(async () => {
+      elapsed += 5;
+      try {
+        const app = await get(`${API}/applications/${appId}`);
+
+        if (app.status === 'submitted') {
+          clearInterval(poll);
+          actionsEl.innerHTML = `<span class="badge b-submitted">✓ Submitted via ${esc(source)}</span>`;
+        } else if (app.status === 'filled') {
+          clearInterval(poll);
+          actionsEl.innerHTML = `<span class="badge b-filled">Form filled — browser open for review</span>`;
+        } else if (app.status === 'failed') {
+          clearInterval(poll);
+          const errNote = app.notes || '';
+          const needsConnect = errNote.includes('session_missing') || errNote.includes('session_expired');
+          const reconnect = needsConnect
+            ? ` — <a href="#" onclick="nav(document.querySelector('[data-section=portals]'),'portals');return false" style="color:var(--accent);font-weight:600">Reconnect ${esc(source)} →</a>`
+            : '';
+          actionsEl.innerHTML = `<span class="badge b-rejected">✗ Failed</span>${reconnect}
+            <button class="btn btn-ghost btn-sm" onclick="location.reload()">↻ Retry</button>`;
+        } else {
+          btn.innerHTML = `<span class="spinner"></span> Applying (${elapsed}s)…`;
+          if (elapsed >= 300) {
+            clearInterval(poll);
+            btn.disabled = false;
+            btn.innerHTML = '🎯 Portal Apply';
+          }
+        }
+      } catch(e) { /* network blip */ }
+    }, 5000);
+
+  } catch(e) {
+    btn.disabled = false;
+    btn.innerHTML = '🎯 Portal Apply';
+    // Show inline error under the actions row
+    const card = document.getElementById('mc-' + matchId);
+    const prev = card.querySelector('.portal-err');
+    if (prev) prev.remove();
+    const d = document.createElement('div');
+    d.className = 'portal-err';
+    d.style.cssText = 'font-size:11px;color:var(--danger);margin-top:6px;padding:0 0 2px';
+    d.textContent = '✗ ' + e.message;
+    actionsEl.after(d);
+  }
+}
+
+async function approveMatch(id, btn) {
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>';
+  try {
+    const res = await post(`${API}/matches/${id}/approve`, {});
+    if (!res.ok) throw new Error('Failed');
+    const card = document.getElementById('mc-' + id);
+    card.style.opacity = '.55';
+    card.querySelector('.m-actions').innerHTML = '<span class="badge b-approved">Approved — tailoring in progress</span>';
+  } catch(e) { btn.disabled=false; btn.innerHTML='✓ Approve'; }
+}
+
+async function rejectMatch(id, btn) {
+  btn.disabled = true;
+  try {
+    await post(`${API}/matches/${id}/reject`, {});
+    document.getElementById('mc-' + id).remove();
+  } catch(e) { btn.disabled=false; }
+}
+
+// ── Applications ─────────────────────────────────────────────────
+async function loadApplications() {
+  const el = document.getElementById('apps-list');
+  el.innerHTML = spinner_page();
+  try {
+    const data = await get(`${API}/applications`);
+    if (!data.length) { el.innerHTML = empty('📋', 'No applications yet.'); return; }
+    el.innerHTML = data.map(a => {
+      const job = a.job || {};
+      const date = (a.applied_at || a.created_at) ? new Date(a.applied_at || a.created_at).toLocaleDateString() : '';
+      const note = a.notes ? `<div class="a-note">${esc(a.notes.slice(0,140))}</div>` : '';
+      return `<div class="app-card">
+        <div class="a-info">
+          <div class="a-title">${esc(job.title || 'Unknown Job')}</div>
+          <div class="a-company">${esc(job.company || '')}${job.location ? ' · ' + esc(job.location) : ''}</div>
+          ${note}
+          <div class="a-meta">${date}${date ? ' · ' : ''}ID: ${a.id.slice(0,8)}…</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;flex-shrink:0">
+          <span class="badge b-${a.status}">${a.status}</span>
+          <button class="btn btn-ghost btn-sm" onclick="previewResume('${a.id}')">View Resume</button>
+          ${job.job_url ? `<a href="${esc(job.job_url)}" target="_blank" class="btn btn-ghost btn-sm">↗</a>` : ''}
+        </div>
+      </div>`;
+    }).join('');
+  } catch(e) { el.innerHTML = errBox(e); }
+}
+
+async function viewApp(id) {
+  try {
+    const d = await get(`${API}/applications/${id}`);
+    const job = d.job || {};
+    const tm = d.tailored_material;
+
+    document.getElementById('modal-title').textContent =
+      (job.title || 'Application') + (job.company ? ` @ ${job.company}` : '');
+
+    let html = `<div style="display:flex;gap:8px;align-items:center;margin-bottom:16px;flex-wrap:wrap">
+      <span class="badge b-${d.status}">${d.status}</span>
+      ${job.job_url ? `<a href="${esc(job.job_url)}" target="_blank" class="btn btn-ghost btn-sm">↗ Job Posting</a>` : ''}
+    </div>`;
+
+    if (d.notes) html += `<div class="alert a-error" style="display:block">${esc(d.notes)}</div>`;
+
+    if (tm) {
+      html += `
+        <div class="sec-label">Tailored Summary</div>
+        <div class="summary-box">${esc(tm.summary || '')}</div>
+        <div class="sec-label">Resume Bullets</div>
+        <ul class="bullet-list">${(tm.bullets||[]).map(b=>`<li>${esc(b)}</li>`).join('')}</ul>
+        <div class="sec-label">ATS Keywords</div>
+        <div class="chips" style="margin-top:6px">${(tm.keywords||[]).map(k=>`<span class="chip c-match">${esc(k)}</span>`).join('')}</div>
+      `;
+    } else {
+      html += `<p style="color:var(--muted);font-size:13px;margin-top:8px">No tailored material yet — pipeline may still be running.</p>`;
+    }
+
+    document.getElementById('modal-body').innerHTML = html;
+    document.getElementById('modal-overlay').classList.add('open');
+  } catch(e) { console.error(e); }
+}
+
+function previewResume(id) {
+  // Open the full HTML resume preview in a new tab
+  window.open(`${API}/applications/${id}/resume-preview`, '_blank');
+}
+
+function closeModal(e) {
+  if (!e || e.target === document.getElementById('modal-overlay'))
+    document.getElementById('modal-overlay').classList.remove('open');
+}
+
+// ── Jobs ─────────────────────────────────────────────────────────
+async function loadJobs(offset = 0) {
+  const tbody = document.getElementById('jobs-tbody');
+  tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:32px"><span class="spinner" style="border-top-color:var(--muted)"></span></td></tr>`;
+  try {
+    const data = await get(`${API}/jobs?limit=25&offset=${offset}`);
+    if (!data.length) { tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:40px">No jobs yet — run a scrape first.</td></tr>`; return; }
+    tbody.innerHTML = data.map(j => `<tr>
+      <td><a href="${esc(j.job_url)}" target="_blank" style="color:var(--text);font-weight:500;text-decoration:none">${esc(j.title)}</a></td>
+      <td style="color:var(--muted)">${esc(j.company)}</td>
+      <td style="color:var(--muted)">${esc(j.location||'')}</td>
+      <td><span class="badge b-pending" style="text-transform:capitalize">${esc(j.source)}</span></td>
+      <td style="color:var(--muted)">${j.scraped_at ? new Date(j.scraped_at).toLocaleDateString() : ''}</td>
+    </tr>`).join('');
+
+    const pag = document.getElementById('jobs-pag');
+    pag.innerHTML = '';
+    if (offset > 0) { const b=btn_el('← Prev','btn-ghost',()=>loadJobs(offset-25)); pag.appendChild(b); }
+    if (data.length===25) { const b=btn_el('Next →','btn-ghost',()=>loadJobs(offset+25)); pag.appendChild(b); }
+  } catch(e) { tbody.innerHTML = `<tr><td colspan="5">${errBox(e)}</td></tr>`; }
+}
+
+// ── Search Roles Panel ───────────────────────────────────────────
+async function openRolesPanel() {
+  document.getElementById('roles-overlay').style.display = 'block';
+  await loadRoles();
+}
+function closeRolesPanel(e) {
+  if (!e || e.target === document.getElementById('roles-overlay'))
+    document.getElementById('roles-overlay').style.display = 'none';
+}
+async function loadRoles() {
+  const listEl = document.getElementById('roles-list');
+  listEl.innerHTML = '<span style="color:var(--muted);font-size:12px">Loading…</span>';
+  try {
+    const data = await get(`${API}/search-roles`);
+    renderRoles(data);
+  } catch(e) {
+    listEl.innerHTML = `<span style="color:var(--danger);font-size:12px">Error: ${esc(e.message)}</span>`;
+  }
+}
+function renderRoles(data) {
+  const listEl = document.getElementById('roles-list');
+  const all = [...(data.roles||[]), ...(data.custom_roles||[])];
+  const custom = new Set(data.custom_roles||[]);
+  if (!all.length) {
+    listEl.innerHTML = '<span style="color:var(--muted);font-size:12px">No roles detected yet — click ↻ Re-detect to extract from resume.</span>';
+    return;
+  }
+  listEl.innerHTML = all.map(r => `
+    <span style="display:inline-flex;align-items:center;gap:6px;background:#2d2d4e;border:1px solid ${custom.has(r)?'#7c3aed':'#3d3d5e'};border-radius:6px;padding:4px 10px;font-size:12px;color:#e2e8f0">
+      ${custom.has(r)?'<span style="color:#a78bfa;font-size:10px">custom</span>':''}
+      ${esc(r)}
+      <span style="cursor:pointer;color:var(--muted);font-size:14px;line-height:1" onclick="removeRole(${JSON.stringify(r)})">×</span>
+    </span>`).join('');
+}
+async function detectRoles() {
+  const btn = document.getElementById('roles-detect-btn');
+  btn.disabled = true; btn.textContent = '↻ Detecting…';
+  const msg = document.getElementById('roles-msg');
+  msg.style.display = 'none';
+  try {
+    await post(`${API}/search-roles/detect`, {});
+    msg.style.display = 'block'; msg.style.color = 'var(--warning)';
+    msg.textContent = 'Detecting from resume… refresh in ~15s';
+    setTimeout(async () => { await loadRoles(); btn.disabled=false; btn.textContent='↻ Re-detect'; msg.style.display='none'; }, 15000);
+  } catch(e) {
+    btn.disabled=false; btn.textContent='↻ Re-detect';
+    msg.style.display='block'; msg.style.color='var(--danger)'; msg.textContent='Error: '+e.message;
+  }
+}
+async function addCustomRole() {
+  const input = document.getElementById('roles-custom-input');
+  const role = input.value.trim();
+  if (!role) return;
+  try {
+    await post(`${API}/search-roles/add`, {role});
+    input.value = '';
+    await loadRoles();
+  } catch(e) {
+    const msg = document.getElementById('roles-msg');
+    msg.style.display='block'; msg.style.color='var(--danger)'; msg.textContent='Error: '+e.message;
+  }
+}
+async function removeRole(role) {
+  try {
+    await post(`${API}/search-roles/remove`, {role});
+    await loadRoles();
+  } catch(e) {}
+}
+async function clearAndScrape() {
+  if (!confirm('Delete ALL jobs, matches, and applications from the database and do a fresh scrape?')) return;
+  closeRolesPanel();
+  try {
+    await post(`${API}/admin/clear-jobs`, {});
+    await triggerScrape();
+    if (document.querySelector('[data-section="jobs"].active')) loadJobs();
+  } catch(e) { window.alert('Clear failed: ' + e.message); }
+}
+
+// ── Scrape ───────────────────────────────────────────────────────
+async function triggerScrape() {
+  const btn = document.getElementById('scrape-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Scraping…';
+  try {
+    await post(`${API}/scrape`, {});
+    btn.innerHTML = '✓ Started';
+    setTimeout(() => { btn.disabled=false; btn.innerHTML='🔍 Scrape Now'; }, 3000);
+  } catch(e) { btn.disabled=false; btn.innerHTML='🔍 Scrape Now'; window.alert(e.message); }
+}
+
+// ── Utilities ────────────────────────────────────────────────────
+async function get(url) { const r = await fetch(url); if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); }
+async function post(url, body) { return fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); }
+function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function empty(icon,txt) { return `<div class="empty"><div class="empty-icon">${icon}</div><div class="empty-text">${txt}</div></div>`; }
+function errBox(e) { return `<div class="alert a-error" style="display:block">Error: ${esc(e.message)}</div>`; }
+function spinner_page() { return `<div class="empty"><span class="spinner" style="width:24px;height:24px;border-top-color:var(--muted)"></span></div>`; }
+function btn_el(txt, cls, fn) { const b=document.createElement('button'); b.className='btn '+cls; b.textContent=txt; b.onclick=fn; return b; }
+function setBtnLoading(id, on, label) { const b=document.getElementById(id); b.disabled=on; b.innerHTML=on?'<span class="spinner"></span> Running…':label; }
+function alert(id, type, html) { const el=document.getElementById(id); el.className='alert a-'+type; el.innerHTML=html; el.style.display='block'; }
+function hideAlert(id) { document.getElementById(id).style.display='none'; }
+
+// ── Outreach ─────────────────────────────────────────────────────
+let outreachLogPoll = null;
+let outreachStatusPoll = null;
+
+function switchOutreachTab(tab) {
+  ['pipeline','jobs','tracking'].forEach(t => {
+    document.getElementById('outreach-' + t).style.display = t === tab ? 'block' : 'none';
+    const btn = document.getElementById('otab-' + t);
+    btn.style.background = t === tab ? 'var(--accent)' : '';
+    btn.style.color = t === tab ? '#fff' : '';
+    btn.style.borderColor = t === tab ? 'var(--accent)' : '';
+  });
+  if (tab === 'jobs') loadOutreachJobs();
+  if (tab === 'tracking') loadOutreachTracking();
+}
+
+async function loadOutreachStatus() {
+  // Activate pipeline tab on first load
+  switchOutreachTab('pipeline');
+  try {
+    const d = await get(`${API}/outreach/status`);
+    document.getElementById('o-drafted-today').textContent = d.drafts_today ?? '0';
+    document.getElementById('o-cap').textContent = d.cap ?? '15';
+    document.getElementById('o-cap-input').value = d.cap ?? 15;
+    const running = !!d.running;
+    document.getElementById('o-running-badge').style.display = running ? 'inline' : 'none';
+    if (running) startOutreachPolling();
+    // load tracking count
+    try {
+      const rows = await get(`${API}/outreach/tracking`);
+      document.getElementById('o-total-contacted').textContent = rows.length;
+    } catch(e) { document.getElementById('o-total-contacted').textContent = '0'; }
+  } catch(e) {
+    document.getElementById('o-drafted-today').textContent = '0';
+    document.getElementById('o-total-contacted').textContent = '0';
+  }
+}
+
+async function runOutreachPipeline() {
+  const cap = parseInt(document.getElementById('o-cap-input').value) || 15;
+  const dry_run = document.getElementById('o-dry-run').checked;
+  const btn = document.getElementById('o-run-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Starting…';
+
+  try {
+    const res = await post(`${API}/outreach/run`, { cap, dry_run });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Failed to start pipeline');
+
+    const alertEl = document.getElementById('o-alert');
+    alertEl.className = 'alert a-info';
+    alertEl.innerHTML = `Pipeline started — cap=${cap}, dry_run=${dry_run}. Log streaming below.`;
+    alertEl.style.display = 'block';
+    document.getElementById('o-running-badge').style.display = 'inline';
+    document.getElementById('o-log').innerHTML = '<span style="color:var(--accent)">Pipeline started…</span>\n';
+    startOutreachPolling();
+  } catch(e) {
+    const alertEl = document.getElementById('o-alert');
+    alertEl.className = 'alert a-error';
+    alertEl.innerHTML = esc(e.message);
+    alertEl.style.display = 'block';
+    btn.disabled = false;
+    btn.innerHTML = '▶ Run Outreach Pipeline';
+  }
+}
+
+function startOutreachPolling() {
+  stopOutreachPolling();
+  outreachLogPoll = setInterval(pollOutreachLog, 2000);
+  outreachStatusPoll = setInterval(pollOutreachStatus, 5000);
+}
+
+function stopOutreachPolling() {
+  if (outreachLogPoll) { clearInterval(outreachLogPoll); outreachLogPoll = null; }
+  if (outreachStatusPoll) { clearInterval(outreachStatusPoll); outreachStatusPoll = null; }
+}
+
+async function pollOutreachLog() {
+  try {
+    const d = await get(`${API}/outreach/log?lines=50`);
+    const el = document.getElementById('o-log');
+    if (d.lines && d.lines.length) {
+      el.innerHTML = d.lines.map(l => esc(l)).join('\n');
+      el.scrollTop = el.scrollHeight;
+    }
+  } catch(e) { /* network blip */ }
+}
+
+async function pollOutreachStatus() {
+  try {
+    const d = await get(`${API}/outreach/status`);
+    document.getElementById('o-drafted-today').textContent = d.drafts_today ?? '0';
+    document.getElementById('o-cap').textContent = d.cap ?? '15';
+    const running = !!d.running;
+    document.getElementById('o-running-badge').style.display = running ? 'inline' : 'none';
+    if (!running) {
+      stopOutreachPolling();
+      const btn = document.getElementById('o-run-btn');
+      btn.disabled = false;
+      btn.innerHTML = '▶ Run Outreach Pipeline';
+    }
+  } catch(e) { /* network blip */ }
+}
+
+// Store full job rows so draftJobEmail can access them by index
+let _outreachJobRows = [];
+
+async function loadOutreachJobs() {
+  const tbody = document.getElementById('o-jobs-tbody');
+  const relevantOnly = document.getElementById('o-jobs-relevant-only')?.checked ?? true;
+  tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:32px"><span class="spinner" style="border-top-color:var(--muted)"></span></td></tr>`;
+  try {
+    const resp = await get(`${API}/outreach/jobs`);
+    let data = resp.jobs || [];
+    const metaEl = document.getElementById('o-jobs-meta');
+
+    const totalRelevant = data.filter(j => j.relevant).length;
+    const totalDrafted  = data.filter(j => j.drafted).length;
+
+    if (resp.last_run) {
+      const d = new Date(resp.last_run);
+      metaEl.textContent = `Last run: ${d.toLocaleString()} · ${resp.total} scored · ${totalRelevant} relevant · ${totalDrafted} drafted`;
+    } else {
+      metaEl.textContent = '';
+    }
+
+    if (relevantOnly) data = data.filter(j => j.relevant);
+
+    _outreachJobRows = data;
+
+    if (!data.length) {
+      tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:40px">
+        ${relevantOnly ? 'No relevant jobs yet — run the pipeline first, or uncheck "Relevant only".' : 'No scored jobs yet — run the pipeline first.'}
+      </td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = data.map((j, idx) => {
+      const score = j.score ?? 0;
+      const scoreClass = score >= 7 ? 'var(--success)' : score >= 5 ? 'var(--warning)' : 'var(--danger)';
+      const scoreBg   = score >= 7 ? 'rgba(16,185,129,.15)' : score >= 5 ? 'rgba(245,158,11,.15)' : 'rgba(239,68,68,.15)';
+
+      const jobLink = j.job_url
+        ? `<a href="${esc(j.job_url)}" target="_blank" style="color:var(--accent);text-decoration:none;font-weight:600">${esc(j.company||'')}</a>`
+        : `<span style="font-weight:500">${esc(j.company||'')}</span>`;
+
+      const contactLine = j.contact_name && j.contact_name !== 'Hiring Team'
+        ? `<div style="font-size:11px;color:var(--success);margin-top:2px">→ ${esc(j.contact_name)}${j.contact_title ? ' · ' + esc(j.contact_title) : ''}</div>`
+        : `<div style="font-size:11px;color:var(--muted);margin-top:2px">→ Hiring Team</div>`;
+
+      const titleLine = `<div style="font-size:12px;color:var(--muted)">${esc(j.title||'')}</div>${contactLine}`;
+
+      const sourceColor = {jobspy:'b-pending',twitter:'b-filled',linkedin_posts:'b-filled',
+                           remoteok:'b-approved',weworkremotely:'b-approved',remotive:'b-approved',
+                           hn_hiring:'b-pending',yc_jobs:'b-pending',producthunt:'b-pending'}[j.source] || 'b-pending';
+
+      // Draft button state
+      let draftCell;
+      if (j.drafted) {
+        draftCell = `<span class="badge b-approved" style="font-size:11px">✓ Drafted</span>`;
+      } else if (j.relevant) {
+        draftCell = `<button class="btn btn-primary btn-sm" id="draft-btn-${idx}" onclick="draftJobEmail(${idx}, this)">✉ Draft Email</button>`;
+      } else {
+        draftCell = `<span style="color:var(--muted);font-size:11px">–</span>`;
+      }
+
+      return `<tr id="job-row-${idx}">
+        <td>${jobLink}</td>
+        <td>${titleLine}</td>
+        <td><span class="badge ${sourceColor}" style="text-transform:capitalize;font-size:10px">${esc(j.source||'')}</span></td>
+        <td><span style="display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:50%;font-weight:800;font-size:13px;background:${scoreBg};color:${scoreClass}">${score}</span></td>
+        <td style="color:var(--muted);font-size:12px;max-width:240px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(j.match_reason||'')}">${esc(j.match_reason||'')}</td>
+        <td id="draft-cell-${idx}">${draftCell}</td>
+      </tr>`;
+    }).join('');
+  } catch(e) { tbody.innerHTML = `<tr><td colspan="6">${errBox(e)}</td></tr>`; }
+}
+
+async function draftJobEmail(idx, btn) {
+  const j = _outreachJobRows[idx];
+  if (!j) return;
+
+  const cell = document.getElementById(`draft-cell-${idx}`);
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Drafting…';
+
+  try {
+    const res = await fetch(`${API}/outreach/draft-job`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        company:       j.company   || '',
+        title:         j.title     || '',
+        source:        j.source    || '',
+        domain:        j.domain    || '',
+        job_url:       j.job_url   || '',
+        description:   j.description || '',
+        contact_name:  j.contact_name  || 'Hiring Team',
+        contact_title: j.contact_title || '',
+        contact_type:  j.contact_type  || 'hiring_team',
+        tech_stack:    j.tech_stack    || '',
+        match_reason:  j.match_reason  || '',
+      })
+    });
+    const data = await res.json();
+
+    if (!res.ok) {
+      cell.innerHTML = `<span style="color:var(--danger);font-size:11px" title="${esc(data.detail||'')}">✗ Failed</span>
+        <button class="btn btn-ghost btn-sm" style="margin-left:6px;font-size:11px" onclick="draftJobEmail(${idx},this)">Retry</button>`;
+      return;
+    }
+
+    // Success — mark row
+    _outreachJobRows[idx].drafted = true;
+    cell.innerHTML = `<div><span class="badge b-approved" style="font-size:11px">✓ Drafted</span>
+      <div style="font-size:10px;color:var(--muted);margin-top:3px">${esc(data.email||'')}</div></div>`;
+
+    // Update stats line
+    loadOutreachStatus();
+
+  } catch(e) {
+    cell.innerHTML = `<span style="color:var(--danger);font-size:11px">✗ Network error</span>
+      <button class="btn btn-ghost btn-sm" style="margin-left:6px;font-size:11px" onclick="draftJobEmail(${idx},this)">Retry</button>`;
+  }
+}
+
+async function loadOutreachTracking() {
+  const tbody = document.getElementById('o-tracking-tbody');
+  tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:32px"><span class="spinner" style="border-top-color:var(--muted)"></span></td></tr>`;
+  try {
+    const data = await get(`${API}/outreach/tracking`);
+    if (!data.length) {
+      tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:40px">No tracking entries yet.</td></tr>`;
+      return;
+    }
+    tbody.innerHTML = data.map(row => {
+      const s = (row.status || '').toLowerCase();
+      const statusClass = s.includes('draft') ? 'b-approved' : s.includes('sent') ? 'b-submitted' : s.includes('replied') ? 'b-filled' : 'b-pending';
+      const draftIcon = row.draft_created === 'true' ? '<span style="color:var(--success)">✓</span>' : '<span style="color:var(--muted)">–</span>';
+      return `<tr>
+        <td style="color:var(--muted);white-space:nowrap">${esc(row.date || '')}</td>
+        <td style="font-weight:500">${esc(row.company || '')}</td>
+        <td style="color:var(--muted)">${esc(row.contact || '')}</td>
+        <td style="color:var(--muted);font-size:12px">${esc(row.domain || '')}</td>
+        <td style="font-size:12px;color:var(--muted)">${esc(row.email_guessed || '')}</td>
+        <td style="text-align:center">${draftIcon}</td>
+        <td><span class="badge ${statusClass}">${esc(row.status || '')}</span></td>
+        <td style="color:var(--muted);font-size:12px;max-width:180px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(row.notes || '')}</td>
+      </tr>`;
+    }).join('');
+  } catch(e) { tbody.innerHTML = `<tr><td colspan="8">${errBox(e)}</td></tr>`; }
+}
+
+// ── Portals ─────────────────────────────────────────────────────────
+const PORTAL_META = {
+  naukri:    { icon: '🇮🇳', name: 'Naukri.com',    domain: 'naukri.com' },
+  instahyre: { icon: '🚀', name: 'Instahyre',      domain: 'instahyre.com' },
+  wellfound: { icon: '🌐', name: 'Wellfound',      domain: 'wellfound.com' },
+};
+
+// login_id per portal for ongoing connect flows
+const _portalLoginIds = {};
+const _portalPolls = {};
+
+async function loadPortalStatus() {
+  const el = document.getElementById('portals-list');
+  el.innerHTML = spinner_page();
+  try {
+    const data = await get(`${API}/portal-status`);
+    renderPortalCards(data.portals);
+    updatePortalBadge(data.portals);
+    updatePortalGlobalAlert(data.portals);
+  } catch(e) {
+    el.innerHTML = errBox(e);
+  }
+}
+
+function renderPortalCards(portals) {
+  const el = document.getElementById('portals-list');
+  el.innerHTML = portals.map(p => portalCard(p)).join('');
+}
+
+function portalCard(p) {
+  const meta = PORTAL_META[p.portal] || { icon: '🔗', name: p.portal, domain: '' };
+  const isOk = p.ready;
+  const isExpiring = p.expires_in_days !== null && p.expires_in_days <= 7;
+
+  let statusLabel, statusClass, cardClass, details, expiryLine;
+
+  if (p.status === 'present') {
+    statusLabel = isExpiring ? 'Expiring Soon' : 'Connected';
+    statusClass = isExpiring ? 'pcs-connecting' : 'pcs-ok';
+    cardClass = isExpiring ? 'pc-warn' : 'pc-ok';
+    const age = p.age_days !== null ? `${p.age_days}d ago` : 'recently';
+    details = `Session saved ${age}`;
+    if (p.expires_in_days !== null) {
+      expiryLine = `<div class="pc-expiry${isExpiring ? ' expiring' : ''}">Expires in ~${p.expires_in_days} days</div>`;
+    } else {
+      expiryLine = `<div class="pc-expiry">Session active</div>`;
+    }
+  } else if (p.status === 'expired') {
+    statusLabel = 'Session Expired';
+    statusClass = 'pcs-warn';
+    cardClass = 'pc-warn';
+    details = 'Session has expired — click Reconnect to log in again.';
+    expiryLine = '';
+  } else if (p.status === 'missing') {
+    statusLabel = 'Not Connected';
+    statusClass = 'pcs-warn';
+    cardClass = 'pc-warn';
+    details = 'No session found. Click Connect to log in with Google.';
+    expiryLine = '';
+  } else {
+    statusLabel = p.status.charAt(0).toUpperCase() + p.status.slice(1);
+    statusClass = 'pcs-warn';
+    cardClass = 'pc-warn';
+    details = `Session ${p.status}. Try reconnecting.`;
+    expiryLine = '';
+  }
+
+  const connectBtn = isOk
+    ? `<button class="btn btn-ghost btn-sm" onclick="connectPortal('${p.portal}',this)">↻ Reconnect</button>`
+    : `<button class="btn btn-primary btn-sm" onclick="connectPortal('${p.portal}',this)">🔑 Connect</button>`;
+
+  const disconnectBtn = isOk
+    ? `<button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="disconnectPortal('${p.portal}')">Disconnect</button>`
+    : '';
+
+  return `<div class="portal-card ${cardClass}" id="pc-${p.portal}">
+    <div class="pc-header">
+      <span class="pc-icon">${meta.icon}</span>
+      <div>
+        <div class="pc-name">${meta.name}</div>
+        <div class="pc-domain">${meta.domain}</div>
+      </div>
+      <span class="pc-status ${statusClass}">${statusLabel}</span>
+    </div>
+    <div>
+      <div class="pc-details">${details}</div>
+      ${expiryLine}
+    </div>
+    <div class="pc-actions">
+      ${connectBtn}
+      ${disconnectBtn}
+    </div>
+    <div class="pc-log" id="pc-log-${p.portal}"></div>
+  </div>`;
+}
+
+async function connectPortal(portal, btn) {
+  if (_portalPolls[portal]) { clearInterval(_portalPolls[portal]); delete _portalPolls[portal]; }
+
+  const logEl = document.getElementById('pc-log-' + portal);
+  logEl.style.display = 'block';
+  logEl.style.color = 'var(--warning)';
+  logEl.textContent = 'Opening login window…';
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Opening…';
+
+  try {
+    const res = await post(`${API}/portal-login/${portal}`, {});
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Failed to start login');
+
+    _portalLoginIds[portal] = data.login_id;
+    logEl.textContent = 'A login window opened — sign in and it will close automatically.';
+    pollPortalLogin(portal, data.login_id, btn, logEl);
+  } catch(e) {
+    btn.disabled = false;
+    btn.innerHTML = '🔑 Connect';
+    logEl.textContent = 'Error: ' + e.message;
+    logEl.style.color = 'var(--danger)';
+  }
+}
+
+function pollPortalLogin(portal, loginId, btn, logEl) {
+  let elapsed = 0;
+  _portalPolls[portal] = setInterval(async () => {
+    elapsed += 3;
+    try {
+      const data = await get(`${API}/portal-login/${portal}/status?login_id=${loginId}`);
+
+      if (data.status === 'browser_opened') {
+        logEl.textContent = `Sign in to complete — window will close automatically (${elapsed}s)…`;
+        btn.innerHTML = `<span class="spinner"></span> Waiting (${elapsed}s)`;
+      } else if (data.status === 'success') {
+        clearInterval(_portalPolls[portal]);
+        delete _portalPolls[portal];
+        logEl.textContent = '✓ Login successful — session saved!';
+        logEl.style.color = 'var(--success)';
+        btn.disabled = false;
+        // Refresh portal cards after short delay
+        setTimeout(() => loadPortalStatus(), 1000);
+      } else if (data.status === 'failed') {
+        clearInterval(_portalPolls[portal]);
+        delete _portalPolls[portal];
+        logEl.textContent = '✗ ' + (data.error || 'Login failed — please try again.');
+        logEl.style.color = 'var(--danger)';
+        btn.disabled = false;
+        btn.innerHTML = '🔑 Connect';
+      }
+    } catch(e) { /* network blip — keep polling */ }
+
+    if (elapsed >= 330) {
+      clearInterval(_portalPolls[portal]);
+      delete _portalPolls[portal];
+      btn.disabled = false;
+      btn.innerHTML = '🔑 Connect';
+      logEl.textContent = 'Timeout — please try again.';
+      logEl.style.color = 'var(--danger)';
+    }
+  }, 3000);
+}
+
+async function disconnectPortal(portal) {
+  if (!confirm(`Disconnect ${PORTAL_META[portal]?.name || portal}? You will need to log in again before scraping.`)) return;
+  try {
+    await fetch(`${API}/portal-session/${portal}`, { method: 'DELETE' });
+    await loadPortalStatus();
+  } catch(e) { alert('Failed to disconnect: ' + e.message); }
+}
+
+function updatePortalBadge(portals) {
+  const disconnected = portals.filter(p => !p.ready).length;
+  const badge = document.getElementById('portal-badge');
+  if (badge) {
+    badge.textContent = disconnected;
+    badge.style.display = disconnected ? 'inline' : 'none';
+    badge.style.background = 'var(--danger)';
+  }
+}
+
+function updatePortalGlobalAlert(portals) {
+  const disconnected = portals.filter(p => !p.ready);
+  const banner = document.getElementById('portal-global-alert');
+  if (!banner) return;
+  if (disconnected.length === 0) {
+    banner.style.display = 'none';
+    return;
+  }
+  const names = disconnected.map(p => PORTAL_META[p.portal]?.name || p.portal).join(', ');
+  document.getElementById('portal-alert-text').textContent =
+    `${disconnected.length} portal${disconnected.length > 1 ? 's' : ''} need reconnection: ${names}`;
+  banner.style.display = 'flex';
+}
+
+// ── Init — load pending match count + portal status ──────────────────
+(async () => {
+  try {
+    const d = await get(`${API}/matches?status=pending`);
+    if (d.length) { const b=document.getElementById('match-badge'); b.textContent=d.length; b.style.display='inline'; }
+  } catch(e) {}
+  // Load portal status on startup for the global banner
+  try {
+    const d = await get(`${API}/portal-status`);
+    updatePortalBadge(d.portals);
+    updatePortalGlobalAlert(d.portals);
+  } catch(e) {}
+})();
+</script>
+</body>
+</html>

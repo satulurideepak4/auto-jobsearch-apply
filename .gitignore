@@ -1,0 +1,18 @@
+# Service account key — never commit
+vertex-ai-credentials.json
+
+# Environment
+.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+dist/
+*.egg-info/
+
+# Editor
+.DS_Store
+.idea/
+.vscode/
