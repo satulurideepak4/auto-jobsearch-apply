@@ -50,6 +50,11 @@ async def fetch_jd_from_url(url: str, llm: "LLMProvider") -> dict:
         )
         page = await context.new_page()
         try:
+            from app.scraping.drivers import _apply_stealth
+            await _apply_stealth(page)
+        except Exception as _e:
+            logger.debug("Failed to apply stealth in jd_fetcher: %s", _e)
+        try:
             await page.goto(url, wait_until="networkidle", timeout=30_000)
             # Extra settle time for JS-heavy ATS pages that lazy-render the JD
             await page.wait_for_timeout(2_000)

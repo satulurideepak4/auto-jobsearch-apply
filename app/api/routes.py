@@ -497,6 +497,101 @@ async def _run_apply_pipeline(
                 pass
 
 
+async def _run_company_targeting(
+    company_name: str,
+    auto_submit: bool,
+    force: bool,
+) -> None:
+    """Background task: locate, crawl, and auto-apply to suitable roles at a target company."""
+    from app.config import get_settings
+    from app.llm.provider_factory import get_provider
+    from app.matching.resume_parser import get_resume_data
+    from app.scraping.company_agent import CompanyTargetedAgent
+    from app.storage.db import AsyncSessionLocal
+    from app.storage.repository import create_application, upsert_job
+    from sqlalchemy import select
+    from app.storage.models import Job
+
+    settings = get_settings()
+    scoring_llm = get_provider(settings, task="scoring")
+    agent = CompanyTargetedAgent(scoring_llm)
+
+    # 1. Resolve careers URL
+    careers_url = agent.find_careers_url(company_name)
+    if not careers_url:
+        logger.error("CompanyTargetedAgent: could not find careers page for %r", company_name)
+        return
+
+    # 2. Crawl careers page
+    try:
+        raw_jobs = await agent.crawl_jobs(careers_url)
+    except Exception as exc:
+        logger.error("CompanyTargetedAgent: failed to crawl %s: %s", careers_url, exc)
+        return
+
+    if not raw_jobs:
+        logger.warning("CompanyTargetedAgent: no jobs discovered on careers page: %s", careers_url)
+        return
+
+    # 3. Fast AI suitability pass
+    try:
+        resume_data = get_resume_data(settings.resume_path, scoring_llm)
+    except Exception as exc:
+        logger.error("CompanyTargetedAgent: failed to load resume data: %s", exc)
+        return
+
+    suitable_jobs = agent.filter_eligible_jobs(raw_jobs, resume_data)
+    if not suitable_jobs:
+        logger.info("CompanyTargetedAgent: zero suitable engineering positions found at %s.", company_name)
+        return
+
+    logger.info("CompanyTargetedAgent: spawning end-to-end apply pipelines for %d positions...", len(suitable_jobs))
+
+    # 4. Spawning standard apply pipelines
+    async with AsyncSessionLocal() as db:
+        for job_data in suitable_jobs:
+            url = job_data["job_url"]
+            if not url:
+                continue
+
+            # Skip if already exists
+            existing = await db.execute(select(Job).where(Job.job_url == url))
+            if existing.scalar_one_or_none():
+                logger.info("CompanyTargetedAgent: skipping already-tracked job URL: %s", url)
+                continue
+
+            try:
+                # Create stub job
+                stub_job = await upsert_job(db, {
+                    "title": job_data.get("title", "Software Engineer"),
+                    "company": job_data.get("company", company_name),
+                    "location": job_data.get("location", "Remote"),
+                    "description": None,
+                    "job_url": url,
+                    "source": "company_agent",
+                })
+                await db.flush()
+
+                # Create application
+                application = await create_application(db, stub_job.id)
+                await db.commit()
+
+                # Execute existing apply task asynchronously
+                import asyncio
+                asyncio.create_task(
+                    _run_apply_pipeline(
+                        url,
+                        stub_job.id,
+                        application.id,
+                        auto_submit,
+                        force,
+                    )
+                )
+                logger.info("CompanyTargetedAgent: ✓ queued apply task for %s @ %s", job_data.get("title"), company_name)
+            except Exception as e:
+                logger.error("CompanyTargetedAgent: failed to register job %s: %s", url, e)
+
+
 # ---------------------------------------------------------------------------
 # Request models
 # ---------------------------------------------------------------------------
@@ -517,6 +612,12 @@ class CrawlRequest(BaseModel):
     role: str = ""                    # optional keyword filter
     limit: int = 30                   # max jobs to discover
     score_and_save: bool = True       # score against resume and persist matches
+
+
+class CompanyApplyRequest(BaseModel):
+    company_name: str
+    auto_submit: bool = False
+    force: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -698,6 +799,37 @@ async def apply_from_url(
         "message": (
             "Pipeline running in background. "
             f"Poll GET /api/v1/applications/{application.id} for status."
+        ),
+    }
+
+
+@router.post("/company-apply")
+async def apply_by_company(
+    request: CompanyApplyRequest,
+    background_tasks: BackgroundTasks,
+):
+    """Target a specific company by name, crawl their career site in the background, and auto-apply to matching roles.
+
+    Creates matching job applications asynchronously. Check logs to track progress.
+
+    Body:
+        company_name — the name of the target company (e.g. "Stripe", "Vercel")
+        auto_submit  — set true to click the submit button automatically (default false)
+        force        — set true to apply even if the score is below MATCH_SCORE_THRESHOLD
+    """
+    background_tasks.add_task(
+        _run_company_targeting,
+        request.company_name,
+        request.auto_submit,
+        request.force,
+    )
+
+    return {
+        "status": "started",
+        "company_name": request.company_name,
+        "message": (
+            f"Targeted company pipeline started for '{request.company_name}' in the background. "
+            "Please check backend logs or GET /api/v1/applications to track created jobs."
         ),
     }
 

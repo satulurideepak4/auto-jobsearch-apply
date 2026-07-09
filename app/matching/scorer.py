@@ -80,8 +80,20 @@ class JobScorer:
 
         job_title = job.get("title", "")
         job_description = job.get("description", "")[:3000]  # Truncate to save tokens
+        job_source = job.get("source", "")
 
-        prompt = f"""You are a recruitment expert. Score how well the following candidate matches the job posting.
+        is_social = len(job_description) < 400 or job_source in ("linkedin_post", "twitter_post")
+        social_instruction = ""
+        if is_social:
+            social_instruction = """
+NOTE: The job posting below is a brief social media post (X/LinkedIn). Since it is short, many details may be implicit. 
+Be lenient and constructive in your evaluation:
+- Infer core technical requirements based on the job title and general context.
+- Do not heavily penalize the score for missing elements that are typically unstated in short posts (like benefits, detailed company histories, or minor libraries).
+- Focus on matching core tech skills (e.g. Python, SQL) and seniority alignment.
+"""
+
+        prompt = f"""You are a recruitment expert. Score how well the following candidate matches the job posting.{social_instruction}
 
 Candidate profile:
 - Current role: {current_role}

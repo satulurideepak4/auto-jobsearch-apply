@@ -138,6 +138,11 @@ class UniversalCrawler:
             )
             page = await context.new_page()
             try:
+                from app.scraping.drivers import _apply_stealth
+                await _apply_stealth(page)
+            except Exception as _e:
+                logger.debug("Failed to apply stealth in universal_crawler: %s", _e)
+            try:
                 jobs = await self.discover_jobs_on_page(page, url, limit=limit)
                 return jobs
             finally:

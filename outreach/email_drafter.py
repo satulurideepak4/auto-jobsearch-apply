@@ -43,14 +43,37 @@ _GCP_PROJECT = _config.get("GCP_PROJECT_ID", os.environ.get("GCP_PROJECT_ID", ""
 if not _GCP_PROJECT:
     raise RuntimeError("GCP_PROJECT_ID not set in outreach/README.md config or environment")
 
+import google.auth
 from google.oauth2 import service_account as _sa
-_credentials = _sa.Credentials.from_service_account_file(
-    os.environ.get(
-        "GOOGLE_APPLICATION_CREDENTIALS",
-        str(Path(__file__).parent.parent / "vertex-ai-credentials.json"),
-    ),
-    scopes=["https://www.googleapis.com/auth/cloud-platform"],
+
+_cred_path = os.environ.get(
+    "GOOGLE_APPLICATION_CREDENTIALS",
+    str(Path(__file__).parent.parent / "vertex-ai-credentials.json"),
 )
+_credentials = None
+
+if Path(_cred_path).exists():
+    try:
+        _credentials = _sa.Credentials.from_service_account_file(
+            _cred_path,
+            scopes=["https://www.googleapis.com/auth/cloud-platform"],
+        )
+        logger.info("Loaded Vertex AI credentials from %s", _cred_path)
+    except Exception as _exc:
+        logger.warning("Failed to load Vertex AI credentials from %s: %s", _cred_path, _exc)
+else:
+    logger.warning(
+        "Vertex AI key file not found at %s. Attempting Application Default Credentials (ADC)...",
+        _cred_path
+    )
+    try:
+        _credentials, _ = google.auth.default(
+            scopes=["https://www.googleapis.com/auth/cloud-platform"]
+        )
+        logger.info("Loaded Application Default Credentials (ADC) successfully.")
+    except Exception as _exc:
+        logger.warning("Failed to load Application Default Credentials: %s", _exc)
+
 vertexai.init(project=_GCP_PROJECT, location="us-central1", credentials=_credentials)
 
 # Model names read from README config — swap to gemini-3.1-pro-preview / gemini-3-flash-preview
@@ -333,6 +356,14 @@ TOP ACHIEVEMENT (must appear naturally in every email):
             if other_emails else ""
         )
 
+        job_source = job.get("source", "")
+        is_social = job_source in ("linkedin_post", "twitter_post")
+
+        if is_social:
+            company_line_rule = f"""[SOCIAL MEDIA REFERENCE LINE — 1-2 sentences. Refer naturally to their recent post on { 'LinkedIn' if job_source == 'linkedin_post' else 'X/Twitter' } about hiring for {job.get('title', '')}. State that you saw it and are reaching out directly because your backend/AI engineering profile aligns perfectly. Example style: "Saw your post on X today about needing a senior developer to build out your high-scale backend — this aligns exactly with what I have been shipping." ]"""
+        else:
+            company_line_rule = """[COMPANY LINE — 1-2 sentences. Name the specific technical problem they are solving or the hard thing about what they build. Show you understand the challenge, not just the product. Do not compliment them. Example style: "Drift detection and CI/CD enforcement across hybrid VMware and cloud — the backend holding that together is genuinely hard to get right."]"""
+
         user_prompt = f"""Write a cold outreach email for this opportunity:
 
 Company: {job.get("company", "")}
@@ -345,7 +376,7 @@ STRUCTURE (follow exactly, no deviations):
 
 Hi {contact_name},
 
-[COMPANY LINE — 1-2 sentences. Name the specific technical problem they are solving or the hard thing about what they build. Show you understand the challenge, not just the product. Do not compliment them. Example style: "Drift detection and CI/CD enforcement across hybrid VMware and cloud — the backend holding that together is genuinely hard to get right."]
+{company_line_rule}
 
 [BACKGROUND LINE — 1 tight sentence. Who the sender is + where + what built + AI angle if relevant. Must reference APIwiz and real work. Always mention the primary languages (Java, Go). Example: "Four years as founding engineer at APIwiz, building Java and Go backend systems for fintech clients across APAC, and shipping production RAG pipelines and LLM integrations."]
 
